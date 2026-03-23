@@ -22,3 +22,18 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Bun
+bun.lockb
+
+# Vite
+*.local
+vite.config.js.timestamp-*
+vite.config.ts.timestamp-*
+
+# Tailwind CSS
+tailwind.config.js.timestamp-*
+
+# Vue
+*.vue.js
+*.vue.d.ts

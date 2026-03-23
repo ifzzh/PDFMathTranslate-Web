@@ -1,5 +1,35 @@
-# Vue 3 + Vite
+# PDFMathTranslate-Web
 
-This template should help get you started developing with Vue 3 in Vite. The template uses Vue 3 `<script setup>` SFCs, check out the [script setup docs](https://v3.vuejs.org/api/sfc-script-setup.html#sfc-script-setup) to learn more.
+A Vue 3 single-page application for translating math-heavy PDF documents. Upload a PDF, choose a target language and translation service, and download the translated result in mono or dual-page layout.
 
-Learn more about IDE Support for Vue in the [Vue Docs Scaling up Guide](https://vuejs.org/guide/scaling-up/tooling.html#ide-support).
+## Features
+
+- PDF upload and translation with math content preservation
+- 11 languages supported (English, Chinese, Japanese, Korean, French, German, Spanish, Russian, Italian, Portuguese, Traditional Chinese)
+- Mono and dual-page download formats
+- Recent files tracking
+- PWA support
+- Dev mode for debugging
+
+## Tech Stack
+
+- Vue 3 (Composition API + `<script setup>`)
+- Vite
+- Tailwind CSS
+- Reka UI
+- vue-pdf-embed
+- Vue i18n
+- Axios
+
+## Getting Started
+
+```bash
+npm install
+npm run dev
+```
+
+## Build
+
+```bash
+npm run build
+```
