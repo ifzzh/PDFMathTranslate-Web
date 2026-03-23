@@ -1,0 +1,148 @@
+{
+  "app": {
+    "title": "PDFMathTranslate",
+    "subtitle": "alpha"
+  },
+  "fileSelector": {
+    "clickToUpload": "Haz clic para subir",
+    "dragAndDrop": "o arrastra y suelta",
+    "subtitle": "Para traducir preservando los diseños."
+  },
+  "translation": {
+    "options": "Opciones de traducción",
+    "optionsDescription": "Configure sus preferencias de traducción.",
+    "file": "Archivo",
+    "link": "Enlace",
+    "pdfLink": "Enlace PDF",
+    "pdfLinkPlaceholder": "https://example.com/paper.pdf",
+    "from": "Desde",
+    "to": "Hacia",
+    "selectLanguage": "Seleccionar idioma",
+    "service": "Servicio",
+    "selectService": "Seleccionar servicio",
+    "startTranslation": "Iniciar traducción",
+    "starting": "Iniciando...",
+    "processing": "Procesando",
+    "translating": "Traduciendo...",
+    "stop": "Detener",
+    "cancel": "Cancelar",
+    "download": "Descargar PDF traducido",
+    "result": "Translation Result",
+    "resultDescription": "Preview and download your translated PDF",
+    "downloadMono": "Download Mono PDF",
+    "downloadDual": "Download Dual PDF",
+    "restart": "Start New Translation"
+  },
+  "settings": {
+    "title": "Configuración",
+    "backendMode": "Modo de traducción",
+    "backendModeDescription": "Cambiar entre motor de traducción estable y experimental",
+    "stable": "Estable",
+    "stableTooltip": "Usa la versión estable de pdf2zh",
+    "experimental": "Experimental",
+    "experimentalTooltip": "Usa la versión experimental de pdf2zh_next",
+    "outputPreference": "Preferencia de salida",
+    "monoOnly": "Solo mono",
+    "dualTranslateFirst": "Poner la versión traducida primero",
+    "alternatingPages": "Páginas alternadas",
+    "bilingual": "Bilingüe",
+    "rateLimiting": "Rate Limiting",
+    "qps": "QPS (Queries Per Second)",
+    "qpsPlaceholder": "QPS limit for translation service",
+    "poolMaxWorkers": "Pool Max Workers",
+    "poolMaxWorkersPlaceholder": "Maximum number of workers for translation pool",
+    "termQps": "Term QPS",
+    "termQpsPlaceholder": "QPS limit for term extraction translation service",
+    "termPoolMaxWorkers": "Term Pool Max Workers",
+    "termPoolMaxWorkersPlaceholder": "Maximum number of workers for term extraction pool",
+    "pdfProcessing": "PDF Processing",
+    "pages": "Pages",
+    "pagesPlaceholder": "Pages to translate (e.g. '1,2,1-,-3,3-5')",
+    "watermarkOutputMode": "Watermark Output Mode",
+    "watermarked": "Watermarked",
+    "noWatermark": "No Watermark",
+    "both": "Both",
+    "maxPagesPerPart": "Max Pages Per Part",
+    "maxPagesPerPartPlaceholder": "Maximum pages per part for split translation",
+    "translationOptions": "Translation Options",
+    "minTextLength": "Min Text Length",
+    "minTextLengthPlaceholder": "Minimum text length to translate",
+    "ignoreCache": "Ignore Cache",
+    "customSystemPrompt": "Custom System Prompt",
+    "customSystemPromptPlaceholder": "Custom system prompt for translation",
+    "appearance": "Apariencia",
+    "accentColor": "Color de acento",
+    "accentColors": {
+      "black": "Negro",
+      "sky": "Cielo",
+      "lime": "Lima",
+      "orange": "Naranja",
+      "pink": "Rosa"
+    },
+    "advanced": "Advanced",
+    "translateTableText": "Translate Table Text",
+    "skipScannedDetection": "Skip Scanned Detection",
+    "ocrWorkaround": "OCR Workaround",
+    "autoEnableOcrWorkaround": "Auto Enable OCR Workaround"
+  },
+  "language": {
+    "select": "Seleccionar idioma",
+    "english": "English",
+    "chinese": "简体中文",
+    "chineseTraditional": "繁體中文",
+    "japanese": "日本語",
+    "korean": "한국어",
+    "french": "Français",
+    "german": "Deutsch",
+    "spanish": "Español",
+    "russian": "Русский",
+    "italian": "Italiano",
+    "portuguese": "Português"
+  },
+  "footer": {
+    "builtBy": "Creado por",
+    "and": "y"
+  },
+  "pwa": {
+    "install": "Instalar aplicación"
+  },
+  "header": {
+    "howDoesItWork": "¿Cómo funciona?"
+  },
+  "shortcuts": {
+    "title": "Atajos",
+    "language": "Cambiar idioma",
+    "theme": "Alternar modo oscuro",
+    "settings": "Abrir configuración",
+    "closeSettings": "Cerrar configuración",
+    "stop": "Detener traducción",
+    "new": "Nueva traducción",
+    "downloadMono": "Descargar traducción",
+    "downloadDual": "Descargar comparación"
+  },
+  "recentFiles": {
+    "title": "Traducciones recientes",
+    "description": "Sus archivos traducidos recientemente",
+    "clear": "Borrar",
+    "mono": "Mono",
+    "dual": "Dual",
+    "cached": "En caché"
+  },
+  "citation": {
+    "title": "Citar",
+    "citeThisWork": "Citar este proyecto",
+    "copyBibtex": "Copiar BibTeX",
+    "copy": "Copiar",
+    "copied": "¡Copiado!",
+    "formattedCitation": "Cita formateada",
+    "selectStyle": "Seleccionar estilo de cita..."
+  },
+  "devMode": {
+    "enabled": "Modo desarrollador activo",
+    "badge": "DEV",
+    "statsTitle": "Estadísticas del sistema",
+    "statsDescription": "Métricas de rendimiento y sistema en tiempo real",
+    "advancedSettingsTitle": "Parámetros avanzados",
+    "advancedSettingsDescription": "Configuración auto-generada desde el backend"
+  }
+}
