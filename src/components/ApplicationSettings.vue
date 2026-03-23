@@ -451,6 +451,7 @@ const isPreciseBackend = computed(() => translationBackend.value === 'precise')
                   v-for="srv in services"
                   :key="`service-${srv.value || srv}`"
                   :value="srv.value || srv"
+                  :text-value="srv.display || String(srv)"
                 >
                   {{ srv.display || srv }}
                 </SelectItem>
