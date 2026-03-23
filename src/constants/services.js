@@ -35,6 +35,7 @@ export const serviceFields = {
         { name: 'siliconflow_model', label: 'serviceFields.model', type: 'text', placeholder: 'Qwen/Qwen2.5-7B-Instruct' },
         { name: 'siliconflow_base_url', label: 'serviceFields.baseUrl', type: 'text', placeholder: 'https://api.siliconflow.cn/v1' },
     ],
+    SiliconFlowFree: [],
     TencentMechineTranslation: [
         { name: 'tencentcloud_secret_id', label: 'serviceFields.secretId', type: 'password' },
         { name: 'tencentcloud_secret_key', label: 'serviceFields.secretKey', type: 'password' },
