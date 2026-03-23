@@ -59,19 +59,19 @@ const model = computed({
   set: (val) => emit('update:modelValue', val)
 })
 
-// Translation backend mode: 'stable' (pdf2zh) or 'experimental' (pdf2zh_next)
+// Translation backend mode: 'fast' (pdf2zh) or 'precise' (pdf2zh_next)
 const translationBackend = computed({
-  get: () => model.value?.translationBackend || 'stable',
-  set: (val) => { 
+  get: () => model.value?.translationBackend || 'fast',
+  set: (val) => {
     if (!model.value) model.value = {}
-    model.value.translationBackend = val 
+    model.value.translationBackend = val
   }
 })
 
 // Backend availability from config
 const backends = computed(() => props.config?.backends || {})
-const isStableAvailable = computed(() => backends.value?.stable?.available ?? false)
-const stableInstallHint = computed(() => backends.value?.stable?.install_hint || 'pip install pdf2zh-next[stable]')
+const isFastAvailable = computed(() => backends.value?.fast?.available ?? false)
+const fastInstallHint = computed(() => backends.value?.fast?.install_hint || 'pip install pdf2zh-next[fast]')
 
 const services = computed(() => {
   return props.config?.services || []
@@ -79,10 +79,15 @@ const services = computed(() => {
 
 const service = computed({
   get: () => model.value?.service,
-  set: (val) => { 
+  set: (val) => {
     if (!model.value) model.value = {}
     model.value.service = val
   }
+})
+
+const serviceDisplayName = computed(() => {
+  const srv = services.value.find(s => (s.value || s) === service.value)
+  return srv?.display || service.value
 })
 
 // Output preferences
@@ -195,10 +200,10 @@ const ignoreCache = computed({
 })
 
 const customSystemPrompt = computed({
-  get: () => model.value?.customSystemPrompt || '',
-  set: (val) => { 
+  get: () => model.value?.custom_prompt || '',
+  set: (val) => {
     if (!model.value) model.value = {}
-    model.value.customSystemPrompt = val || undefined
+    model.value.custom_prompt = val || undefined
   }
 })
 
@@ -256,12 +261,12 @@ const currentServiceFields = computed(() => {
 })
 
 // Version info from /v1/version endpoint
-const stableVersion = computed(() => props.versionInfo?.fast || 'unknown')
-const experimentalVersion = computed(() => props.versionInfo?.precise || 'unknown')
+const fastVersion = computed(() => props.versionInfo?.fast || 'unknown')
+const preciseVersion = computed(() => props.versionInfo?.precise || 'unknown')
 
-// Check if we're using stable backend
-const isStableBackend = computed(() => translationBackend.value === 'stable')
-const isExperimentalBackend = computed(() => translationBackend.value === 'experimental')
+// Check which backend is active
+const isFastBackend = computed(() => translationBackend.value === 'fast')
+const isPreciseBackend = computed(() => translationBackend.value === 'precise')
 </script>
 
 <template>
@@ -282,28 +287,28 @@ const isExperimentalBackend = computed(() => translationBackend.value === 'exper
               <Button 
                 variant="ghost" 
                 size="sm" 
-                @click="isStableAvailable && (translationBackend = 'stable')" 
+                @click="isFastAvailable && (translationBackend = 'fast')"
                 class="transition-all duration-300 rounded-md gap-1.5 h-8 px-3"
                 :class="[
-                  translationBackend === 'stable' 
-                    ? 'bg-background shadow-sm text-primary font-medium' 
+                  translationBackend === 'fast'
+                    ? 'bg-background shadow-sm text-primary font-medium'
                     : 'text-muted-foreground hover:text-primary hover:bg-background/50',
-                  !isStableAvailable && 'opacity-50 cursor-not-allowed hover:bg-transparent hover:text-muted-foreground'
+                  !isFastAvailable && 'opacity-50 cursor-not-allowed hover:bg-transparent hover:text-muted-foreground'
                 ]"
-                :disabled="!isStableAvailable"
+                :disabled="!isFastAvailable"
               >
                 <ShieldCheck class="w-4 h-4" />
-                {{ t('settings.stable') }}
+                {{ t('settings.fast') }}
               </Button>
             </TooltipTrigger>
             <TooltipContent side="bottom" class="max-w-xs">
-              <template v-if="isStableAvailable">
-                <p class="font-medium">{{ t('settings.stableTooltip') }}</p>
-                <p class="text-xs text-muted-foreground mt-1">pdf2zh v{{ stableVersion }}</p>
+              <template v-if="isFastAvailable">
+                <p class="font-medium">{{ t('settings.fastTooltip') }}</p>
+                <p class="text-xs text-muted-foreground mt-1">pdf2zh v{{ fastVersion }}</p>
               </template>
               <template v-else>
-                <p class="font-medium text-amber-600 dark:text-amber-400">{{ t('settings.stableNotAvailable') }}</p>
-                <p class="text-xs text-muted-foreground mt-1">{{ t('settings.installWith') }}: <code class="bg-muted px-1 rounded">{{ stableInstallHint }}</code></p>
+                <p class="font-medium text-amber-600 dark:text-amber-400">{{ t('settings.fastNotAvailable') }}</p>
+                <p class="text-xs text-muted-foreground mt-1">{{ t('settings.installWith') }}: <code class="bg-muted px-1 rounded">{{ fastInstallHint }}</code></p>
               </template>
             </TooltipContent>
           </Tooltip>
@@ -314,19 +319,19 @@ const isExperimentalBackend = computed(() => translationBackend.value === 'exper
               <Button 
                 variant="ghost" 
                 size="sm" 
-                @click="translationBackend = 'experimental'" 
+                @click="translationBackend = 'precise'"
                 class="transition-all duration-300 rounded-md gap-1.5 h-8 px-3"
-                :class="translationBackend === 'experimental' 
-                  ? 'bg-background shadow-sm text-primary font-medium' 
+                :class="translationBackend === 'precise'
+                  ? 'bg-background shadow-sm text-primary font-medium'
                   : 'text-muted-foreground hover:text-primary hover:bg-background/50'"
               >
                 <FlaskConical class="w-4 h-4" />
-                {{ t('settings.experimental') }}
+                {{ t('settings.precise') }}
               </Button>
             </TooltipTrigger>
             <TooltipContent side="bottom" class="max-w-xs">
-              <p class="font-medium">{{ t('settings.experimentalTooltip') }}</p>
-              <p class="text-xs text-muted-foreground mt-1">pdf2zh_next v{{ experimentalVersion }}</p>
+              <p class="font-medium">{{ t('settings.preciseTooltip') }}</p>
+              <p class="text-xs text-muted-foreground mt-1">pdf2zh_next v{{ preciseVersion }}</p>
             </TooltipContent>
           </Tooltip>
         </TooltipProvider>
@@ -338,7 +343,7 @@ const isExperimentalBackend = computed(() => translationBackend.value === 'exper
       <AccordionItem value="output-preference">
         <AccordionTrigger>{{ t('settings.outputPreference') }}</AccordionTrigger>
         <AccordionContent class="space-y-4 pt-2">
-          <div :class="isExperimentalBackend ? 'grid grid-cols-3 gap-4' : 'grid grid-cols-2 gap-4'">
+          <div :class="isPreciseBackend ? 'grid grid-cols-3 gap-4' : 'grid grid-cols-2 gap-4'">
             <div 
               class="border rounded-lg p-4 cursor-pointer flex flex-col items-center gap-2 hover:bg-accent transition-colors"
               :class="{ 'bg-accent border-primary': !bilingual && !alternatingPages }"
@@ -359,7 +364,7 @@ const isExperimentalBackend = computed(() => translationBackend.value === 'exper
 
             <!-- Alternating pages only available in experimental backend -->
             <div 
-              v-if="isExperimentalBackend"
+              v-if="isPreciseBackend"
               class="border rounded-lg p-4 cursor-pointer flex flex-col items-center gap-2 hover:bg-accent transition-colors"
               :class="{ 'bg-accent border-primary': alternatingPages }"
               @click="() => { alternatingPages = true; bilingual = false }"
@@ -371,7 +376,7 @@ const isExperimentalBackend = computed(() => translationBackend.value === 'exper
 
           <div class="overflow-hidden">
             <!-- Only show dualTranslateFirst and alternatingPages for experimental backend -->
-            <div class="flex items-center justify-between pt-2" v-if="bilingual && isExperimentalBackend">
+            <div class="flex items-center justify-between pt-2" v-if="bilingual && isPreciseBackend">
               <Label for="dual-translate-first">{{ t('settings.dualTranslateFirst') }}</Label>
               <Switch id="dual-translate-first" v-model="dualTranslateFirst" />
             </div>
@@ -437,17 +442,17 @@ const isExperimentalBackend = computed(() => translationBackend.value === 'exper
             <Select v-model="service">
               <SelectTrigger>
                 <SelectValue :placeholder="t('translation.selectService')">
-                  <span v-if="service">{{ service }}</span>
+                  <span v-if="service">{{ serviceDisplayName }}</span>
                   <span v-else class="text-muted-foreground">{{ t('translation.selectService') }}</span>
                 </SelectValue>
               </SelectTrigger>
               <SelectContent>
-                <SelectItem 
-                  v-for="srv in services" 
-                  :key="`service-${srv}`" 
-                  :value="srv"
+                <SelectItem
+                  v-for="srv in services"
+                  :key="`service-${srv.value || srv}`"
+                  :value="srv.value || srv"
                 >
-                  {{ srv }}
+                  {{ srv.display || srv }}
                 </SelectItem>
                 <div v-if="services.length === 0" class="px-2 py-1.5 text-sm text-muted-foreground">
                   {{ t('translation.noServicesAvailable') }}
@@ -482,7 +487,7 @@ const isExperimentalBackend = computed(() => translationBackend.value === 'exper
         <AccordionTrigger>{{ t('settings.pdfProcessing') }}</AccordionTrigger>
         <AccordionContent class="space-y-4 pt-2">
           <!-- Watermark output mode only for experimental backend -->
-          <div class="space-y-2" v-if="isExperimentalBackend">
+          <div class="space-y-2" v-if="isPreciseBackend">
             <Label for="watermark-output-mode">{{ t('settings.watermarkOutputMode') }}</Label>
             <Select v-model="watermarkOutputMode">
               <SelectTrigger>
@@ -504,7 +509,7 @@ const isExperimentalBackend = computed(() => translationBackend.value === 'exper
             />
           </div>
           <!-- Max pages per part only for experimental backend -->
-          <div class="space-y-2" v-if="isExperimentalBackend">
+          <div class="space-y-2" v-if="isPreciseBackend">
             <Label for="max-pages-per-part">{{ t('settings.maxPagesPerPart') }}</Label>
             <Input 
               id="max-pages-per-part" 
@@ -524,7 +529,7 @@ const isExperimentalBackend = computed(() => translationBackend.value === 'exper
             <Switch id="ignore-cache" v-model="ignoreCache" />
           </div>
           <!-- Min text length only for experimental backend -->
-          <div class="space-y-2" v-if="isExperimentalBackend">
+          <div class="space-y-2" v-if="isPreciseBackend">
             <Label for="min-text-length">{{ t('settings.minTextLength') }}</Label>
             <Input 
               id="min-text-length" 
@@ -534,7 +539,7 @@ const isExperimentalBackend = computed(() => translationBackend.value === 'exper
             />
           </div>
           <!-- Custom system prompt only for experimental backend -->
-          <div class="space-y-2" v-if="isExperimentalBackend">
+          <div class="space-y-2" v-if="isPreciseBackend">
             <Label for="custom-system-prompt">{{ t('settings.customSystemPrompt') }}</Label>
             <Input 
               id="custom-system-prompt" 
@@ -546,7 +551,7 @@ const isExperimentalBackend = computed(() => translationBackend.value === 'exper
       </AccordionItem>
 
       <!-- Rate limiting only for experimental backend -->
-      <AccordionItem value="rate-limiting" v-if="isExperimentalBackend">
+      <AccordionItem value="rate-limiting" v-if="isPreciseBackend">
         <AccordionTrigger>{{ t('settings.rateLimiting') }}</AccordionTrigger>
         <AccordionContent class="space-y-4 pt-2">
           <div class="space-y-2">
@@ -589,7 +594,7 @@ const isExperimentalBackend = computed(() => translationBackend.value === 'exper
       </AccordionItem>
 
       <!-- Advanced options only for experimental backend -->
-      <AccordionItem value="advanced" v-if="isExperimentalBackend">
+      <AccordionItem value="advanced" v-if="isPreciseBackend">
         <AccordionTrigger>{{ t('settings.advanced') }}</AccordionTrigger>
         <AccordionContent class="space-y-4 pt-2">
           <div class="flex items-center justify-between">
@@ -647,7 +652,7 @@ const isExperimentalBackend = computed(() => translationBackend.value === 'exper
       </AccordionItem>
       
       <!-- Reset settings button for stable backend (without advanced options) -->
-      <div v-if="isStableBackend" class="pt-4">
+      <div v-if="isFastBackend" class="pt-4">
         <Button variant="destructive" class="w-full" @click="resetSettings">
           {{ t('settings.resetSettings') }}
         </Button>

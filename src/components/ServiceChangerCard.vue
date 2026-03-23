@@ -46,6 +46,11 @@ const service = computed({
   }
 })
 
+const serviceDisplayName = computed(() => {
+  const srv = services.value.find(s => (s.value || s) === service.value)
+  return srv?.display || service.value
+})
+
 const currentServiceFields = computed(() => {
   return serviceFields[service.value] || []
 })
@@ -88,7 +93,7 @@ onBeforeUnmount(() => {
             <template v-if="!isExpanded">
               <div class="flex items-center gap-1">
                 <span>{{ t('fileSelector.currentService') }}</span>
-                <span class="font-medium text-foreground">{{ service }}</span>
+                <span class="font-medium text-foreground">{{ serviceDisplayName }}</span>
                 <span >{{ t('fileSelector.toTranslate') }}</span>
               </div>
               
@@ -128,17 +133,17 @@ onBeforeUnmount(() => {
                 <Select v-model="service">
                   <SelectTrigger>
                     <SelectValue :placeholder="t('translation.selectService')">
-                      <span v-if="service">{{ service }}</span>
+                      <span v-if="service">{{ serviceDisplayName }}</span>
                       <span v-else class="text-muted-foreground">{{ t('translation.selectService') }}</span>
                     </SelectValue>
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem 
-                      v-for="srv in services" 
-                      :key="`service-${srv}`" 
-                      :value="srv"
+                    <SelectItem
+                      v-for="srv in services"
+                      :key="`service-${srv.value || srv}`"
+                      :value="srv.value || srv"
                     >
-                      {{ srv }}
+                      {{ srv.display || srv }}
                     </SelectItem>
                     <div v-if="services.length === 0" class="px-2 py-1.5 text-sm text-muted-foreground">
                       {{ t('translation.noServicesAvailable') }}

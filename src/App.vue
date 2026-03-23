@@ -14,7 +14,6 @@ import { Button } from '@/components/ui/button'
 import { Progress } from '@/components/ui/progress'
 import { Separator } from '@/components/ui/separator'
 import api from '@/services/api'
-import { serviceToBackendName, unsupportedServices } from '@/constants/services'
 import { Loader2, ChevronDown, ChevronUp, Download, RefreshCw, Check, Square, AlertCircle, FileText, Link as LinkIcon, Trash2, Zap, X } from 'lucide-vue-next'
 import { defineAsyncComponent } from 'vue'
 const VuePdfEmbed = defineAsyncComponent(() => import('vue-pdf-embed'))
@@ -271,14 +270,14 @@ onUnmounted(() => {
 
 // Load preferences from localStorage for a specific backend
 const loadPreferences = (backend = null) => {
-  // If no backend specified, try to load from legacy storage or default to stable
+  // If no backend specified, try to load from legacy storage or default to fast
   if (!backend) {
     const legacyStored = localStorage.getItem('translationPreferences')
     if (legacyStored) {
       try {
         const legacy = JSON.parse(legacyStored)
         // Migrate legacy preferences to backend-specific storage
-        const legacyBackend = legacy.translationBackend || 'stable'
+        const legacyBackend = legacy.translationBackend || 'fast'
         const key = `translationPreferences_${legacyBackend}`
         // Only migrate if backend-specific storage doesn't exist
         if (!localStorage.getItem(key)) {
@@ -291,8 +290,8 @@ const loadPreferences = (backend = null) => {
         console.error('Failed to parse stored preferences:', e)
       }
     }
-    // Default to stable if no legacy storage
-    backend = 'stable'
+    // Default to fast if no legacy storage
+    backend = 'fast'
   }
   
   const key = `translationPreferences_${backend}`
@@ -310,7 +309,7 @@ const loadPreferences = (backend = null) => {
 // Save preferences to localStorage for a specific backend
 const savePreferences = (preferences, backend) => {
   if (!backend) {
-    backend = preferences.translationBackend || 'stable'
+    backend = preferences.translationBackend || 'fast'
   }
   
   // Create a clean copy without undefined values for storage
@@ -331,10 +330,10 @@ const defaultPreferences = {
   source: 'File',
   langFrom: 'English',
   langTo: 'Simplified Chinese',
-  service: 'Google', // Default service
+  service: 'google', // Default service (internal value)
   url: '', // URL for Link source type
-  // Translation backend mode: 'stable' (pdf2zh) or 'experimental' (pdf2zh_next)
-  translationBackend: 'stable', // Default to stable mode
+  // Translation backend mode: 'fast' (pdf2zh) or 'precise' (pdf2zh_next)
+  translationBackend: 'fast', // Default to fast mode
   // Output preferences
   // By default, both mono and dual outputs are enabled
   // noMono: false means mono output is enabled
@@ -365,8 +364,8 @@ const defaultPreferences = {
   autoEnableOcrWorkaround: false,
 }
 
-// Initialize with default backend (stable)
-const initialBackend = 'stable'
+// Initialize with default backend (fast)
+const initialBackend = 'fast'
 const initialPreferences = loadPreferences(initialBackend) || loadPreferences() || {}
 const translationParams = reactive({
   ...defaultPreferences,
@@ -432,7 +431,7 @@ watch(
       return // Don't save during backend switch
     }
     
-    const backend = newParams.translationBackend || 'stable'
+    const backend = newParams.translationBackend || 'fast'
     savePreferences(newParams, backend)
 
     // Show saved indicator
@@ -456,20 +455,21 @@ watch(
     serviceStatus.value = 'ready'
 
     const backends = response.data.backends || {}
-    const currentBackend = translationParams.translationBackend || 'stable'
+    const currentBackend = translationParams.translationBackend || 'fast'
     const currentPreferences = loadPreferences(currentBackend)
     const savedService = currentPreferences?.service || translationParams.service
-    
-    // Migrate unsupported services (e.g. SiliconFlowFree from v2) to Google
-    if (savedService && unsupportedServices.includes(savedService)) {
-      console.log(`Service '${savedService}' is unsupported in stable mode, switching to Google`)
-      translationParams.service = 'Google'
+
+    // Validate saved service against config — fall back to first available if invalid
+    const validServiceValues = (response.data.services || []).map(s => s.value)
+    if (savedService && !validServiceValues.includes(savedService)) {
+      console.log(`Service '${savedService}' not found in config, switching to ${validServiceValues[0] || 'google'}`)
+      translationParams.service = validServiceValues[0] || 'google'
     }
-    
-    // If user has stable saved but it's not available, switch to experimental
-    if (currentBackend === 'stable' && backends.stable && !backends.stable.available) {
-      console.log('Stable backend not available, switching to experimental')
-      translationParams.translationBackend = 'experimental'
+
+    // If user has fast saved but it's not available, switch to precise
+    if (currentBackend === 'fast' && backends.fast && !backends.fast.available) {
+      console.log('Fast backend not available, switching to precise')
+      translationParams.translationBackend = 'precise'
     }
     // Set default backend mode from server if not already set
     else if (response.data.default_backend && !currentPreferences) {
@@ -737,7 +737,7 @@ const startTranslation = async (task = null) => {
       file: fileToUpload,
       lang_in: translationParams.langFrom,
       lang_out: translationParams.langTo,
-      service: serviceToBackendName[translationParams.service] || translationParams.service,
+      service: translationParams.service,
     }
 
     // Include optional params from translationParams
@@ -747,6 +747,7 @@ const startTranslation = async (task = null) => {
 
     // Pass extra data as JSON in 'data' field
     const data = {}
+    if (translationParams.translationBackend) data.backend = translationParams.translationBackend
     if (translationParams.envs) data.envs = translationParams.envs
     if (translationParams.skip_subset_fonts) data.skip_subset_fonts = translationParams.skip_subset_fonts
     if (translationParams.ignore_cache) data.ignore_cache = translationParams.ignore_cache

@@ -381,7 +381,7 @@ watch(showErrorTooltip, (newVal) => {
                 <!-- Backend Start Command -->
                 <div class="space-y-1.5">
                   <p class="text-xs text-muted-foreground">{{ t('service.errorTooltip.startBackend') }}</p>
-                  <code class="block bg-muted px-3 py-2 rounded-md text-xs font-mono">pdf2zh_gui</code>
+                  <code class="block bg-muted px-3 py-2 rounded-md text-xs font-mono">pdf2zh -i</code>
                 </div>
                 
                 <!-- Exception -->

@@ -119,8 +119,10 @@ watch(() => props.config, (newConfig, oldConfig) => {
       
       // Set default service if not set or invalid
       const currentService = model.value.service
-      if (!currentService || typeof currentService !== 'string' || !newConfig.services.includes(currentService)) {
-        const newService = newConfig.services[0]
+      const serviceValues = newConfig.services.map(s => s.value || s)
+      if (!currentService || typeof currentService !== 'string' || !serviceValues.includes(currentService)) {
+        const first = newConfig.services[0]
+        const newService = first?.value || first
         console.debug('[TranslationOptions] Setting service:', currentService, '->', newService)
         model.value.service = newService
       } else {
@@ -193,15 +195,16 @@ const langTo = computed({
 const service = computed({
   get: () => {
     const value = model.value.service
-    // Validate value exists in services array
-    if (value && services.value.length > 0 && !services.value.includes(value)) {
-      console.warn('[TranslationOptions] service value not in services:', value, 'Available:', services.value)
+    const serviceValues = services.value.map(s => s.value || s)
+    if (value && serviceValues.length > 0 && !serviceValues.includes(value)) {
+      console.warn('[TranslationOptions] service value not in services:', value, 'Available:', serviceValues)
     }
     return value
   },
   set: (val) => {
+    const serviceValues = services.value.map(s => s.value || s)
     console.debug('[TranslationOptions] service changed:', model.value.service, '->', val)
-    if (services.value.includes(val)) {
+    if (serviceValues.includes(val)) {
       model.value.service = val
     } else {
       console.warn('[TranslationOptions] Invalid service value:', val)
