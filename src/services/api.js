@@ -33,6 +33,9 @@ export default {
     getHealth() {
         return apiClient.get('/status');
     },
+    getVersion() {
+        return apiClient.get('/version');
+    },
     downloadTaskMono(taskId) {
         return apiClient.get(`/translate/${taskId}/download/mono`, { responseType: 'blob' });
     },

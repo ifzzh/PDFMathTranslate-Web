@@ -42,6 +42,7 @@ watch(colorMode, (newMode) => {
 }, { immediate: true })
 
 const config = ref(null)
+const versionInfo = ref(null)
 const selectedFile = ref(null)
 const isTranslating = ref(false)
 const taskId = ref(null)
@@ -174,9 +175,16 @@ const healthPollInterval = ref(null)
 const fetchHealthInfo = async () => {
   try {
     const response = await api.getHealth()
-    healthInfo.value = response.data
-    if (response.data.status) {
-      serviceStatus.value = response.data.status
+    // Normalize backend fields to frontend expected shape
+    const data = response.data
+    healthInfo.value = {
+      ...data,
+      active_tasks: data.active_jobs ?? data.active_tasks ?? 0,
+      total_tasks: data.total_jobs ?? data.total_tasks ?? 0,
+    }
+    if (data.status) {
+      // Backend returns "ok", frontend expects "ready"
+      serviceStatus.value = data.status === 'ok' ? 'ready' : data.status
     }
     // Reset connection attempts on successful connection
     connectionAttempts.value = 0
@@ -438,10 +446,14 @@ watch(
 
   onMounted(async () => {
   try {
-    const response = await api.getConfig()
+    const [response, versionResponse] = await Promise.all([
+      api.getConfig(),
+      api.getVersion().catch(() => ({ data: {} }))
+    ])
     config.value = response.data
+    versionInfo.value = versionResponse.data
     serviceStatus.value = 'ready'
-    
+
     const backends = response.data.backends || {}
     const currentBackend = translationParams.translationBackend || 'stable'
     const currentPreferences = loadPreferences(currentBackend)
@@ -1730,7 +1742,7 @@ initRecentFiles()
               </Button>
             </CardHeader>
             <CardContent>
-              <ApplicationSettings :model-value="translationParams" @update:model-value="v => Object.assign(translationParams, v)" :config="config" :open-accordion="openAccordionItem" />
+              <ApplicationSettings :model-value="translationParams" @update:model-value="v => Object.assign(translationParams, v)" :config="config" :version-info="versionInfo" :open-accordion="openAccordionItem" />
             </CardContent>
           </Card>
 

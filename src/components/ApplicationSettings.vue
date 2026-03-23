@@ -39,6 +39,7 @@ const changeLanguage = (langCode) => {
 const props = defineProps({
   modelValue: { type: Object, required: true },
   config: { type: Object, default: () => ({ services: [] }) },
+  versionInfo: { type: Object, default: () => ({}) },
   openAccordion: { type: String, default: '' }
 })
 
@@ -254,9 +255,9 @@ const currentServiceFields = computed(() => {
   return serviceFields[service.value] || []
 })
 
-// Version info from config
-const stableVersion = computed(() => props.config?.versions?.stable || 'unknown')
-const experimentalVersion = computed(() => props.config?.versions?.experimental || 'unknown')
+// Version info from /v1/version endpoint
+const stableVersion = computed(() => props.versionInfo?.fast || 'unknown')
+const experimentalVersion = computed(() => props.versionInfo?.precise || 'unknown')
 
 // Check if we're using stable backend
 const isStableBackend = computed(() => translationBackend.value === 'stable')
