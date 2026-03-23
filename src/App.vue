@@ -238,7 +238,7 @@ onMounted(async () => {
 
   // Start health monitoring
   fetchHealthInfo() // Initial fetch
-  healthPollInterval.value = setInterval(fetchHealthInfo, 2000) // Poll every 2 seconds
+  healthPollInterval.value = setInterval(fetchHealthInfo, 10000) // Poll every 10 seconds
 })
 
 onUnmounted(() => {
@@ -364,8 +364,8 @@ const defaultPreferences = {
   autoEnableOcrWorkaround: false,
 }
 
-// Initialize with default backend (fast)
-const initialBackend = 'fast'
+// Initialize with the last-selected backend, falling back to 'fast'
+const initialBackend = localStorage.getItem('selectedBackend') || 'fast'
 const initialPreferences = loadPreferences(initialBackend) || loadPreferences() || {}
 const translationParams = reactive({
   ...defaultPreferences,
@@ -389,7 +389,10 @@ watch(
   (newBackend, oldBackend) => {
     if (oldBackend && newBackend !== oldBackend && !isSwitchingBackend) {
       isSwitchingBackend = true
-      
+
+      // Remember the user's backend selection
+      localStorage.setItem('selectedBackend', newBackend)
+
       // Save current configuration for the old backend
       const currentConfig = { ...translationParams }
       // Ensure the saved config has the correct backend marker
