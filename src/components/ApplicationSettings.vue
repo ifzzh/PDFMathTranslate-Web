@@ -1,666 +1,296 @@
 <script setup>
-import { computed, ref, watch } from 'vue'
+import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { useColorMode } from '@vueuse/core'
 import { Label } from '@/components/ui/label'
 import { Input } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
 import { Button } from '@/components/ui/button'
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
-import { Moon, Sun, Laptop, FlaskConical, ShieldCheck } from 'lucide-vue-next'
-import ServiceComparisonCard from './ServiceComparisonCard.vue'
 
-const { t, locale } = useI18n()
-const colorMode = useColorMode({
-  disableTransition: false
-})
-
-const supportedLocales = [
-  { code: 'en', label: 'English', native: 'English' },
-  { code: 'zh', label: '简体中文', native: '简体中文' },
-  { code: 'zh-TW', label: '繁體中文', native: '繁體中文' },
-  { code: 'ja', label: '日本語', native: '日本語' },
-  { code: 'ko', label: '한국어', native: '한국어' },
-  { code: 'fr', label: 'Français', native: 'Français' },
-  { code: 'de', label: 'Deutsch', native: 'Deutsch' },
-  { code: 'es', label: 'Español', native: 'Español' },
-  { code: 'ru', label: 'Русский', native: 'Русский' },
-  { code: 'it', label: 'Italiano', native: 'Italiano' },
-  { code: 'pt', label: 'Português', native: 'Português' },
-]
-
-const changeLanguage = (langCode) => {
-  locale.value = langCode
-  localStorage.setItem('locale', langCode)
-}
+const { t } = useI18n()
 
 const props = defineProps({
-  modelValue: { type: Object, required: true },
-  config: { type: Object, default: () => ({ services: [] }) },
-  versionInfo: { type: Object, default: () => ({}) },
-  openAccordion: { type: String, default: '' }
+  modelValue: {
+    type: Object,
+    required: true,
+  },
 })
 
 const emit = defineEmits(['update:modelValue'])
 
-const accordionValue = ref('output-preference')
-
-// Watch for external accordion open requests
-watch(() => props.openAccordion, (newValue) => {
-  if (newValue) {
-    accordionValue.value = newValue
-  }
-}, { immediate: true })
-
 const model = computed({
   get: () => props.modelValue,
-  set: (val) => emit('update:modelValue', val)
+  set: (value) => emit('update:modelValue', value),
 })
 
-// Translation backend mode: 'fast' (pdf2zh) or 'precise' (pdf2zh_next)
-const translationBackend = computed({
-  get: () => model.value?.translationBackend || 'fast',
-  set: (val) => {
-    if (!model.value) model.value = {}
-    model.value.translationBackend = val
-  }
-})
-
-// Backend availability from config
-const backends = computed(() => props.config?.backends || {})
-const isFastAvailable = computed(() => backends.value?.fast?.available ?? false)
-const fastInstallHint = computed(() => backends.value?.fast?.install_hint || 'pip install pdf2zh-next[fast]')
-
-const services = computed(() => {
-  return props.config?.services || []
-})
-
-const service = computed({
-  get: () => model.value?.service,
-  set: (val) => {
-    if (!model.value) model.value = {}
-    model.value.service = val
-  }
-})
-
-const serviceDisplayName = computed(() => {
-  const srv = services.value.find(s => (s.value || s) === service.value)
-  return srv?.display || service.value
-})
-
-// Output preferences
-// "Bilingual" means enable dual/bilingual output, so noDual should be false when ON
-// When OFF, mono-only mode is enabled (noDual = true)
-const bilingual = computed({
-  get: () => {
-    if (!model.value) return true // Default to bilingual enabled
-    return model.value.noDual !== true
-  },
-  set: (val) => { 
-    if (!model.value) model.value = {}
-    model.value.noDual = !val
-    // If bilingual is disabled (mono-only mode), ensure mono is not disabled
-    if (!val) {
-      model.value.noMono = false
+const numberField = (name) => computed({
+  get: () => model.value[name] ?? '',
+  set: (value) => {
+    if (value === '' || value === null || value === undefined) {
+      model.value[name] = undefined
+      return
     }
-  }
+    model.value[name] = Number(value)
+  },
 })
 
-const dualTranslateFirst = computed({
-  get: () => model.value?.dualTranslateFirst || false,
-  set: (val) => { 
-    if (!model.value) model.value = {}
-    model.value.dualTranslateFirst = val 
-  }
-})
-
-const alternatingPages = computed({
-  get: () => model.value?.useAlternatingPagesDual || false,
-  set: (val) => { 
-    if (!model.value) model.value = {}
-    model.value.useAlternatingPagesDual = val 
-  }
-})
-
-// Rate limiting
-const qps = computed({
-  get: () => model.value?.qps || '',
-  set: (val) => { 
-    if (!model.value) model.value = {}
-    model.value.qps = val ? Number(val) : undefined
-  }
-})
-
-const poolMaxWorkers = computed({
-  get: () => model.value?.poolMaxWorkers || '',
-  set: (val) => { 
-    if (!model.value) model.value = {}
-    model.value.poolMaxWorkers = val ? Number(val) : undefined
-  }
-})
-
-const termQps = computed({
-  get: () => model.value?.termQps || '',
-  set: (val) => { 
-    if (!model.value) model.value = {}
-    model.value.termQps = val ? Number(val) : undefined
-  }
-})
-
-const termPoolMaxWorkers = computed({
-  get: () => model.value?.termPoolMaxWorkers || '',
-  set: (val) => { 
-    if (!model.value) model.value = {}
-    model.value.termPoolMaxWorkers = val ? Number(val) : undefined
-  }
-})
-
-// PDF processing
-const pages = computed({
-  get: () => model.value?.pages || '',
-  set: (val) => { 
-    if (!model.value) model.value = {}
-    model.value.pages = val || undefined
-  }
-})
-
-const watermarkOutputMode = computed({
-  get: () => model.value?.watermarkOutputMode || 'no_watermark',
-  set: (val) => { 
-    if (!model.value) model.value = {}
-    model.value.watermarkOutputMode = val 
-  }
-})
-
-const maxPagesPerPart = computed({
-  get: () => model.value?.maxPagesPerPart || '',
-  set: (val) => { 
-    if (!model.value) model.value = {}
-    model.value.maxPagesPerPart = val ? Number(val) : undefined
-  }
-})
-
-// Translation options
-const minTextLength = computed({
-  get: () => model.value?.minTextLength || '',
-  set: (val) => { 
-    if (!model.value) model.value = {}
-    model.value.minTextLength = val ? Number(val) : undefined
-  }
-})
-
-const ignoreCache = computed({
-  get: () => model.value?.ignoreCache || false,
-  set: (val) => { 
-    if (!model.value) model.value = {}
-    model.value.ignoreCache = val 
-  }
-})
-
-const customSystemPrompt = computed({
-  get: () => model.value?.custom_prompt || '',
-  set: (val) => {
-    if (!model.value) model.value = {}
-    model.value.custom_prompt = val || undefined
-  }
-})
-
-// Advanced options
-const translateTableText = computed({
-  get: () => model.value?.translateTableText || false,
-  set: (val) => { 
-    if (!model.value) model.value = {}
-    model.value.translateTableText = val 
-  }
-})
-
-const skipScannedDetection = computed({
-  get: () => model.value?.skipScannedDetection || false,
-  set: (val) => { 
-    if (!model.value) model.value = {}
-    model.value.skipScannedDetection = val 
-  }
-})
-
-const ocrWorkaround = computed({
-  get: () => model.value?.ocrWorkaround || false,
-  set: (val) => { 
-    if (!model.value) model.value = {}
-    model.value.ocrWorkaround = val 
-  }
-})
-
-const autoEnableOcrWorkaround = computed({
-  get: () => model.value?.autoEnableOcrWorkaround || false,
-  set: (val) => { 
-    if (!model.value) model.value = {}
-    model.value.autoEnableOcrWorkaround = val 
-  }
-})
-
-// Appearance
-const accentColor = computed({
-  get: () => model.value?.accentColor || 'black',
-  set: (val) => { 
-    if (!model.value) model.value = {}
-    model.value.accentColor = val 
-  }
+const qps = numberField('qps')
+const poolMaxWorkers = numberField('pool_max_workers')
+const termPoolMaxWorkers = numberField('term_pool_max_workers')
+const maxPagesPerPart = numberField('max_pages_per_part')
+const shortLineSplitFactor = computed({
+  get: () => model.value.short_line_split_factor ?? 0.8,
+  set: (value) => {
+    if (value === '' || value === null || value === undefined) {
+      model.value.short_line_split_factor = undefined
+      return
+    }
+    model.value.short_line_split_factor = Number(value)
+  },
 })
 
 const resetSettings = () => {
-  localStorage.clear()
+  localStorage.removeItem('pdf-babel.preferences')
+  localStorage.removeItem('pdf-babel.recentTranslations')
   window.location.reload()
 }
-
-import { serviceFields } from '@/constants/services'
-
-const currentServiceFields = computed(() => {
-  return serviceFields[service.value] || []
-})
-
-// Version info from /v1/version endpoint
-const fastVersion = computed(() => props.versionInfo?.fast || 'unknown')
-const preciseVersion = computed(() => props.versionInfo?.precise || 'unknown')
-
-// Check which backend is active
-const isFastBackend = computed(() => translationBackend.value === 'fast')
-const isPreciseBackend = computed(() => translationBackend.value === 'precise')
 </script>
 
 <template>
-  <!-- <div class="mt-2">
-    <p class="text-sm text-gray-500"> Settings will be automatically saved. </p>
-  </div> -->
   <div class="space-y-6">
-    <!-- Backend Mode Switcher - Placed at the top right of settings -->
-    <div class="flex items-center justify-between pb-4 border-b">
-      <div class="space-y-1">
-        <Label class="text-base font-medium">{{ t('settings.backendMode') }}</Label>
-        <p class="text-sm text-muted-foreground">{{ t('settings.backendModeDescription') }}</p>
-      </div>
-      <div class="flex items-center gap-1 p-1 bg-muted/50 rounded-lg transition-colors duration-300">
-        <TooltipProvider>
-          <Tooltip>
-            <TooltipTrigger as-child>
-              <Button 
-                variant="ghost" 
-                size="sm" 
-                @click="isFastAvailable && (translationBackend = 'fast')"
-                class="transition-all duration-300 rounded-md gap-1.5 h-8 px-3"
-                :class="[
-                  translationBackend === 'fast'
-                    ? 'bg-background shadow-sm text-primary font-medium'
-                    : 'text-muted-foreground hover:text-primary hover:bg-background/50',
-                  !isFastAvailable && 'opacity-50 cursor-not-allowed hover:bg-transparent hover:text-muted-foreground'
-                ]"
-                :disabled="!isFastAvailable"
-              >
-                <ShieldCheck class="w-4 h-4" />
-                {{ t('settings.fast') }}
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent side="bottom" class="max-w-xs">
-              <template v-if="isFastAvailable">
-                <p class="font-medium">{{ t('settings.fastTooltip') }}</p>
-                <p class="text-xs text-muted-foreground mt-1">pdf2zh v{{ fastVersion }}</p>
-              </template>
-              <template v-else>
-                <p class="font-medium text-amber-600 dark:text-amber-400">{{ t('settings.fastNotAvailable') }}</p>
-                <p class="text-xs text-muted-foreground mt-1">{{ t('settings.installWith') }}: <code class="bg-muted px-1 rounded">{{ fastInstallHint }}</code></p>
-              </template>
-            </TooltipContent>
-          </Tooltip>
-        </TooltipProvider>
-        <TooltipProvider>
-          <Tooltip>
-            <TooltipTrigger as-child>
-              <Button 
-                variant="ghost" 
-                size="sm" 
-                @click="translationBackend = 'precise'"
-                class="transition-all duration-300 rounded-md gap-1.5 h-8 px-3"
-                :class="translationBackend === 'precise'
-                  ? 'bg-background shadow-sm text-primary font-medium'
-                  : 'text-muted-foreground hover:text-primary hover:bg-background/50'"
-              >
-                <FlaskConical class="w-4 h-4" />
-                {{ t('settings.precise') }}
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent side="bottom" class="max-w-xs">
-              <p class="font-medium">{{ t('settings.preciseTooltip') }}</p>
-              <p class="text-xs text-muted-foreground mt-1">pdf2zh_next v{{ preciseVersion }}</p>
-            </TooltipContent>
-          </Tooltip>
-        </TooltipProvider>
-      </div>
-    </div>
-
-    <Accordion type="single" collapsible class="w-full" v-model="accordionValue">
-      
-      <AccordionItem value="output-preference">
+    <Accordion type="single" collapsible class="w-full" default-value="output">
+      <AccordionItem value="output">
         <AccordionTrigger>{{ t('settings.outputPreference') }}</AccordionTrigger>
         <AccordionContent class="space-y-4 pt-2">
-          <div :class="isPreciseBackend ? 'grid grid-cols-3 gap-4' : 'grid grid-cols-2 gap-4'">
-            <div 
-              class="border rounded-lg p-4 cursor-pointer flex flex-col items-center gap-2 hover:bg-accent transition-colors"
-              :class="{ 'bg-accent border-primary': !bilingual && !alternatingPages }"
-              @click="() => { bilingual = false; alternatingPages = false }"
-            >
-              <img src="@/assets/icons/trans-only.png" class="w-12" />
-              <span class="text-sm font-medium">{{ t('settings.monoOnly') }}</span>
+          <div class="grid gap-4 md:grid-cols-2">
+            <div class="flex items-center justify-between rounded-lg border p-4">
+              <div class="space-y-1">
+                <Label for="output-dual">{{ t('settings.bilingual') }}</Label>
+                <p class="text-xs text-muted-foreground">{{ t('settings.bilingualDescription') }}</p>
+              </div>
+              <Switch
+                id="output-dual"
+                :model-value="!model.no_dual"
+                @update:model-value="(value) => { model.no_dual = !value; if (!value) model.no_mono = false }"
+              />
             </div>
 
-            <div 
-              class="border rounded-lg p-4 cursor-pointer flex flex-col items-center gap-2 hover:bg-accent transition-colors"
-              :class="{ 'bg-accent border-primary': bilingual && !alternatingPages }"
-              @click="() => { bilingual = true; alternatingPages = false }"
-            >
-              <img src="@/assets/icons/compare-hor.png" class="w-12" />
-              <span class="text-sm font-medium">{{ t('settings.bilingual') }}</span>
-            </div>
-
-            <!-- Alternating pages only available in experimental backend -->
-            <div 
-              v-if="isPreciseBackend"
-              class="border rounded-lg p-4 cursor-pointer flex flex-col items-center gap-2 hover:bg-accent transition-colors"
-              :class="{ 'bg-accent border-primary': alternatingPages }"
-              @click="() => { alternatingPages = true; bilingual = false }"
-            >
-              <img src="@/assets/icons/compare-vert.png" class="w-12" />
-              <span class="text-sm font-medium">{{ t('settings.alternatingPages') }}</span>
+            <div class="flex items-center justify-between rounded-lg border p-4">
+              <div class="space-y-1">
+                <Label for="output-mono">{{ t('settings.monoOnly') }}</Label>
+                <p class="text-xs text-muted-foreground">{{ t('settings.monoOnlyDescription') }}</p>
+              </div>
+              <Switch
+                id="output-mono"
+                :model-value="!model.no_mono"
+                @update:model-value="(value) => { model.no_mono = !value; if (!value) model.no_dual = false }"
+              />
             </div>
           </div>
 
-          <div class="overflow-hidden">
-            <!-- Only show dualTranslateFirst and alternatingPages for experimental backend -->
-            <div class="flex items-center justify-between pt-2" v-if="bilingual && isPreciseBackend">
-              <Label for="dual-translate-first">{{ t('settings.dualTranslateFirst') }}</Label>
-              <Switch id="dual-translate-first" v-model="dualTranslateFirst" />
-            </div>
+          <div class="flex items-center justify-between">
+            <Label for="watermark-output-mode">{{ t('settings.watermarkOutputMode') }}</Label>
+            <Select :model-value="model.watermark_output_mode || 'no_watermark'" @update:model-value="(value) => (model.watermark_output_mode = value)">
+              <SelectTrigger class="w-[200px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="no_watermark">{{ t('settings.noWatermark') }}</SelectItem>
+                <SelectItem value="watermarked">{{ t('settings.watermarked') }}</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div class="flex items-center justify-between">
+            <Label for="only-include-translated-page">{{ t('settings.onlyIncludeTranslatedPage') }}</Label>
+            <Switch id="only-include-translated-page" v-model="model.only_include_translated_page" />
           </div>
         </AccordionContent>
       </AccordionItem>
-      <!-- <AccordionItem value="general">
-        <AccordionTrigger>{{ t('settings.general') || 'General' }}</AccordionTrigger>
-        <AccordionContent class="space-y-4 pt-2">
-          <div class="space-y-2">
-             <Label>{{ t('language.select') }}</Label>
-             <Select :model-value="locale" @update:model-value="changeLanguage">
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem v-for="lang in supportedLocales" :key="lang.code" :value="lang.code">
-                  {{ lang.native }}
-                </SelectItem>
-              </SelectContent>
-             </Select>
-          </div>
 
-          <div class="space-y-2">
-            <Label>{{ t('settings.appearance') }}</Label>
-            <div class="grid grid-cols-3 gap-4">
-               <div 
-                class="border rounded-lg p-4 cursor-pointer flex flex-col items-center gap-2 hover:bg-accent transition-colors"
-                :class="{ 'bg-accent border-primary': colorMode === 'light' }"
-                @click="colorMode = 'light'"
-               >
-                 <Sun class="w-6 h-6" />
-                 <span class="text-sm font-medium">{{ t('settings.light') || 'Light' }}</span>
-               </div>
-               <div 
-                class="border rounded-lg p-4 cursor-pointer flex flex-col items-center gap-2 hover:bg-accent transition-colors"
-                :class="{ 'bg-accent border-primary': colorMode === 'dark' }"
-                @click="colorMode = 'dark'"
-               >
-                 <Moon class="w-6 h-6" />
-                 <span class="text-sm font-medium">{{ t('settings.dark') || 'Dark' }}</span>
-               </div>
-               <div 
-                class="border rounded-lg p-4 cursor-pointer flex flex-col items-center gap-2 hover:bg-accent transition-colors"
-                :class="{ 'bg-accent border-primary': colorMode === 'auto' }"
-                @click="colorMode = 'auto'"
-               >
-                 <Laptop class="w-6 h-6" />
-                 <span class="text-sm font-medium">{{ t('settings.auto') || 'Auto' }}</span>
-               </div>
-            </div>
-          </div> -->
-        <!-- </AccordionContent>
-      </AccordionItem> --> 
-
-      <!-- New Service Settings Accordion Item -->
-
-      <!-- <AccordionItem value="service">
-        <AccordionTrigger>{{ t('settings.service') }}</AccordionTrigger>
-        <AccordionContent class="space-y-4 pt-2">
-          <div class="space-y-2">
-            <Label>{{ t('translation.selectService') }}</Label>
-            <Select v-model="service">
-              <SelectTrigger>
-                <SelectValue :placeholder="t('translation.selectService')">
-                  <span v-if="service">{{ serviceDisplayName }}</span>
-                  <span v-else class="text-muted-foreground">{{ t('translation.selectService') }}</span>
-                </SelectValue>
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem
-                  v-for="srv in services"
-                  :key="`service-${srv.value || srv}`"
-                  :value="srv.value || srv"
-                  :text-value="srv.display || String(srv)"
-                >
-                  {{ srv.display || srv }}
-                </SelectItem>
-                <div v-if="services.length === 0" class="px-2 py-1.5 text-sm text-muted-foreground">
-                  {{ t('translation.noServicesAvailable') }}
-                </div>
-              </SelectContent>
-            </Select>
-          </div> -->
-
-          <!-- Dynamic Service Fields -->
-          <!-- <div v-if="currentServiceFields.length > 0" class="space-y-4 pt-2 border-t mt-4">
-            <div v-for="field in currentServiceFields" :key="field.name" class="space-y-2">
-              <Label :for="field.name">{{ t(field.label) }}</Label>
-              <Input 
-                :id="field.name" 
-                v-model="model[field.name]" 
-                :type="field.type" 
-                :placeholder="field.placeholder"
-              />
-            </div> -->
-
-          <!-- Service Comparison Card -->
-          <!-- <ServiceComparisonCard 
-            :current-service="service" 
-            :services="services"
-            @update:current-service="service = $event"
-          />
-          </div>
-        </AccordionContent>
-      </AccordionItem> -->
-
-      <AccordionItem value="pdf-processing">
+      <AccordionItem value="pdf">
         <AccordionTrigger>{{ t('settings.pdfProcessing') }}</AccordionTrigger>
         <AccordionContent class="space-y-4 pt-2">
-          <!-- Watermark output mode only for experimental backend -->
-          <div class="space-y-2" v-if="isPreciseBackend">
-            <Label for="watermark-output-mode">{{ t('settings.watermarkOutputMode') }}</Label>
-            <Select v-model="watermarkOutputMode">
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="watermarked">{{ t('settings.watermarked') }}</SelectItem>
-                <SelectItem value="no_watermark">{{ t('settings.noWatermark') }}</SelectItem>
-                <SelectItem value="both">{{ t('settings.both') }}</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
           <div class="space-y-2">
             <Label for="pages">{{ t('settings.pages') }}</Label>
-            <Input 
-              id="pages" 
-              v-model="pages" 
-              :placeholder="t('settings.pagesPlaceholder')"
-            />
+            <Input id="pages" v-model="model.pages" :placeholder="t('settings.pagesPlaceholder')" />
           </div>
-          <!-- Max pages per part only for experimental backend -->
-          <div class="space-y-2" v-if="isPreciseBackend">
+
+          <div class="space-y-2">
             <Label for="max-pages-per-part">{{ t('settings.maxPagesPerPart') }}</Label>
-            <Input 
-              id="max-pages-per-part" 
-              v-model="maxPagesPerPart" 
-              type="number" 
+            <Input
+              id="max-pages-per-part"
+              v-model="maxPagesPerPart"
+              type="number"
               :placeholder="t('settings.maxPagesPerPartPlaceholder')"
             />
           </div>
         </AccordionContent>
       </AccordionItem>
 
-      <AccordionItem value="translation">
+      <AccordionItem value="text">
         <AccordionTrigger>{{ t('settings.translationOptions') }}</AccordionTrigger>
         <AccordionContent class="space-y-4 pt-2">
           <div class="flex items-center justify-between">
             <Label for="ignore-cache">{{ t('settings.ignoreCache') }}</Label>
-            <Switch id="ignore-cache" v-model="ignoreCache" />
+            <Switch id="ignore-cache" v-model="model.ignore_cache" />
           </div>
-          <!-- Min text length only for experimental backend -->
-          <div class="space-y-2" v-if="isPreciseBackend">
-            <Label for="min-text-length">{{ t('settings.minTextLength') }}</Label>
-            <Input 
-              id="min-text-length" 
-              v-model="minTextLength" 
-              type="number" 
-              :placeholder="t('settings.minTextLengthPlaceholder')"
-            />
+
+          <div class="flex items-center justify-between">
+            <Label for="skip-clean">{{ t('settings.skipClean') }}</Label>
+            <Switch id="skip-clean" v-model="model.skip_clean" />
           </div>
-          <!-- Custom system prompt only for experimental backend -->
-          <div class="space-y-2" v-if="isPreciseBackend">
+
+          <div class="flex items-center justify-between">
+            <Label for="enhance-compatibility">{{ t('settings.enhanceCompatibility') }}</Label>
+            <Switch id="enhance-compatibility" v-model="model.enhance_compatibility" />
+          </div>
+
+          <div class="flex items-center justify-between">
+            <Label for="disable-rich-text-translate">{{ t('settings.disableRichTextTranslate') }}</Label>
+            <Switch id="disable-rich-text-translate" v-model="model.disable_rich_text_translate" />
+          </div>
+
+          <div class="space-y-2">
             <Label for="custom-system-prompt">{{ t('settings.customSystemPrompt') }}</Label>
-            <Input 
-              id="custom-system-prompt" 
-              v-model="customSystemPrompt" 
+            <Input
+              id="custom-system-prompt"
+              v-model="model.custom_system_prompt"
               :placeholder="t('settings.customSystemPromptPlaceholder')"
             />
+          </div>
+
+          <div class="space-y-2">
+            <Label for="primary-font-family">{{ t('settings.primaryFontFamily') }}</Label>
+            <Select :model-value="model.primary_font_family || ''" @update:model-value="(value) => (model.primary_font_family = value || undefined)">
+              <SelectTrigger id="primary-font-family">
+                <SelectValue :placeholder="t('settings.primaryFontFamilyPlaceholder')" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="serif">{{ t('settings.primaryFontFamilySerif') }}</SelectItem>
+                <SelectItem value="sans-serif">{{ t('settings.primaryFontFamilySans') }}</SelectItem>
+                <SelectItem value="script">{{ t('settings.primaryFontFamilyScript') }}</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
         </AccordionContent>
       </AccordionItem>
 
-      <!-- Rate limiting only for experimental backend -->
-      <AccordionItem value="rate-limiting" v-if="isPreciseBackend">
+      <AccordionItem value="performance">
         <AccordionTrigger>{{ t('settings.rateLimiting') }}</AccordionTrigger>
         <AccordionContent class="space-y-4 pt-2">
           <div class="space-y-2">
+            <Label for="qps">{{ t('settings.qps') }}</Label>
+            <Input id="qps" v-model="qps" type="number" :placeholder="t('settings.qpsPlaceholder')" />
+          </div>
+
+          <div class="space-y-2">
             <Label for="pool-max-workers">{{ t('settings.poolMaxWorkers') }}</Label>
-            <Input 
-              id="pool-max-workers" 
-              v-model="poolMaxWorkers" 
-              type="number" 
+            <Input
+              id="pool-max-workers"
+              v-model="poolMaxWorkers"
+              type="number"
               :placeholder="t('settings.poolMaxWorkersPlaceholder')"
             />
           </div>
-          <div class="space-y-2">
-            <Label for="qps">{{ t('settings.qps') }}</Label>
-            <Input 
-              id="qps" 
-              v-model="qps" 
-              type="number" 
-              :placeholder="t('settings.qpsPlaceholder')"
-            />
-          </div>
-          <div class="space-y-2">
-            <Label for="term-qps">{{ t('settings.termQps') }}</Label>
-            <Input 
-              id="term-qps" 
-              v-model="termQps" 
-              type="number" 
-              :placeholder="t('settings.termQpsPlaceholder')"
-            />
-          </div>
+
           <div class="space-y-2">
             <Label for="term-pool-max-workers">{{ t('settings.termPoolMaxWorkers') }}</Label>
-            <Input 
-              id="term-pool-max-workers" 
-              v-model="termPoolMaxWorkers" 
-              type="number" 
+            <Input
+              id="term-pool-max-workers"
+              v-model="termPoolMaxWorkers"
+              type="number"
               :placeholder="t('settings.termPoolMaxWorkersPlaceholder')"
             />
           </div>
         </AccordionContent>
       </AccordionItem>
 
-      <!-- Advanced options only for experimental backend -->
-      <AccordionItem value="advanced" v-if="isPreciseBackend">
+      <AccordionItem value="layout">
         <AccordionTrigger>{{ t('settings.advanced') }}</AccordionTrigger>
         <AccordionContent class="space-y-4 pt-2">
           <div class="flex items-center justify-between">
-            <Label for="translate-table-text">{{ t('settings.translateTableText') }}</Label>
-            <Switch id="translate-table-text" v-model="translateTableText" />
+            <Label for="split-short-lines">{{ t('settings.splitShortLines') }}</Label>
+            <Switch id="split-short-lines" v-model="model.split_short_lines" />
           </div>
+
+          <div class="space-y-2">
+            <Label for="short-line-split-factor">{{ t('settings.shortLineSplitFactor') }}</Label>
+            <Input
+              id="short-line-split-factor"
+              v-model="shortLineSplitFactor"
+              type="number"
+              step="0.1"
+              :placeholder="t('settings.shortLineSplitFactorPlaceholder')"
+            />
+          </div>
+
           <div class="flex items-center justify-between">
             <Label for="skip-scanned-detection">{{ t('settings.skipScannedDetection') }}</Label>
-            <Switch id="skip-scanned-detection" v-model="skipScannedDetection" />
+            <Switch id="skip-scanned-detection" v-model="model.skip_scanned_detection" />
           </div>
+
           <div class="flex items-center justify-between">
             <Label for="ocr-workaround">{{ t('settings.ocrWorkaround') }}</Label>
-            <Switch id="ocr-workaround" v-model="ocrWorkaround" />
+            <Switch id="ocr-workaround" v-model="model.ocr_workaround" />
           </div>
+
           <div class="flex items-center justify-between">
             <Label for="auto-enable-ocr-workaround">{{ t('settings.autoEnableOcrWorkaround') }}</Label>
-            <Switch id="auto-enable-ocr-workaround" v-model="autoEnableOcrWorkaround" />
-          </div>
-          <div class="pt-2">
-            <Button variant="destructive" class="w-full" @click="resetSettings">
-              {{ t('settings.resetSettings') }}
-            </Button>
+            <Switch id="auto-enable-ocr-workaround" v-model="model.auto_enable_ocr_workaround" />
           </div>
         </AccordionContent>
       </AccordionItem>
-      
-      <AccordionItem value="appearance">
-        <AccordionTrigger>{{ t('settings.appearance') || 'Appearance' }}</AccordionTrigger>
+
+      <AccordionItem value="glossary">
+        <AccordionTrigger>{{ t('settings.glossary') }}</AccordionTrigger>
         <AccordionContent class="space-y-4 pt-2">
-          <div class="space-y-2">
-            <Label>{{ t('settings.accentColor') }}</Label>
-            <div class="grid grid-cols-5 gap-3">
-              <div 
-                v-for="color in ['black', 'sky', 'lime', 'orange', 'pink']" 
-                :key="color"
-                class="border-2 rounded-lg p-3 cursor-pointer flex flex-col items-center gap-2 hover:bg-accent transition-all"
-                :class="{ 'border-primary ring-2 ring-primary/20': accentColor === color, 'border-border': accentColor !== color }"
-                @click="accentColor = color"
-              >
-                <div 
-                  class="w-8 h-8 rounded-full"
-                  :class="{
-                    'bg-black dark:bg-white': color === 'black',
-                    'bg-sky-800': color === 'sky',
-                    'bg-lime-800': color === 'lime',
-                    'bg-orange-800': color === 'orange',
-                    'bg-pink-800': color === 'pink'
-                  }"
-                />
-                <span class="text-xs font-medium">{{ t(`settings.accentColors.${color}`) }}</span>
-              </div>
+          <div class="flex items-center justify-between">
+            <Label for="auto-extract-glossary">{{ t('settings.autoExtractGlossary') }}</Label>
+            <Switch id="auto-extract-glossary" v-model="model.auto_extract_glossary" />
+          </div>
+
+          <div class="flex items-center justify-between">
+            <Label for="save-auto-extracted-glossary">{{ t('settings.saveAutoExtractedGlossary') }}</Label>
+            <Switch id="save-auto-extracted-glossary" v-model="model.save_auto_extracted_glossary" />
+          </div>
+        </AccordionContent>
+      </AccordionItem>
+
+      <AccordionItem value="appearance">
+        <AccordionTrigger>{{ t('settings.appearance') }}</AccordionTrigger>
+        <AccordionContent class="space-y-4 pt-2">
+          <Label>{{ t('settings.accentColor') }}</Label>
+          <div class="grid grid-cols-5 gap-3">
+            <div
+              v-for="color in ['black', 'sky', 'lime', 'orange', 'pink']"
+              :key="color"
+              class="border-2 rounded-lg p-3 cursor-pointer flex flex-col items-center gap-2 hover:bg-accent transition-all"
+              :class="{ 'border-primary ring-2 ring-primary/20': model.accent_color === color, 'border-border': model.accent_color !== color }"
+              @click="model.accent_color = color"
+            >
+              <div
+                class="w-8 h-8 rounded-full"
+                :class="{
+                  'bg-black dark:bg-white': color === 'black',
+                  'bg-sky-800': color === 'sky',
+                  'bg-lime-800': color === 'lime',
+                  'bg-orange-800': color === 'orange',
+                  'bg-pink-800': color === 'pink'
+                }"
+              />
+              <span class="text-xs font-medium">{{ t(`settings.accentColors.${color}`) }}</span>
             </div>
           </div>
         </AccordionContent>
       </AccordionItem>
-      
-      <!-- Reset settings button for stable backend (without advanced options) -->
-      <div v-if="isFastBackend" class="pt-4">
-        <Button variant="destructive" class="w-full" @click="resetSettings">
-          {{ t('settings.resetSettings') }}
-        </Button>
-      </div>
     </Accordion>
+
+    <div class="pt-2">
+      <Button variant="destructive" class="w-full" @click="resetSettings">
+        {{ t('settings.resetSettings') }}
+      </Button>
+    </div>
   </div>
 </template>
-
-<style scoped>
-</style>

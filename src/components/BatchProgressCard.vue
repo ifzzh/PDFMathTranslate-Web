@@ -35,13 +35,16 @@ const props = defineProps({
 const emit = defineEmits(['reset', 'retry'])
 
 const hasFailedTasks = computed(() => {
-  return props.tasks.some(t => t.status === 'failed')
+  return props.tasks.some(t => t.status === 'failed' || t.status === 'cancelled')
 })
 
 const getTaskColor = (task) => {
   if (task.status === 'completed') return 'bg-green-500 hover:bg-green-600 border-green-600/20'
   if (task.status === 'failed') return 'bg-destructive hover:bg-destructive/90 border-destructive/20'
-  if (task.status === 'processing') return 'bg-primary hover:bg-primary/90 border-primary/20'
+  if (task.status === 'cancelled') return 'bg-amber-500 hover:bg-amber-600 border-amber-600/20'
+  if (task.status === 'processing' || task.status === 'running' || task.status === 'cancelling') {
+    return 'bg-primary hover:bg-primary/90 border-primary/20'
+  }
   return 'bg-muted hover:bg-muted/80 border-transparent'
 }
 

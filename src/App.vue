@@ -1,1718 +1,826 @@
 <script setup>
-import { ref, onMounted, onUnmounted, reactive, computed, watch, watchEffect, nextTick } from 'vue'
+import { computed, defineAsyncComponent, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import Header from '@/components/Header.vue'
 import TranslationOptions from '@/components/TranslationOptions.vue'
 import ApplicationSettings from '@/components/ApplicationSettings.vue'
-import ProjectInfo from '@/components/ProjectInfo.vue'
-import DevStatsCard from '@/components/DevStatsCard.vue'
-import DevSettings from '@/components/DevSettings.vue'
-import ServiceChangerCard from '@/components/ServiceChangerCard.vue'
 import BatchProgressCard from '@/components/BatchProgressCard.vue'
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
-import { Button } from '@/components/ui/button'
-import { Progress } from '@/components/ui/progress'
-import { Separator } from '@/components/ui/separator'
 import api from '@/services/api'
-import { Loader2, ChevronDown, ChevronUp, Download, RefreshCw, Check, Square, AlertCircle, FileText, Link as LinkIcon, Trash2, Zap, X } from 'lucide-vue-next'
-import { defineAsyncComponent } from 'vue'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Button } from '@/components/ui/button'
+import { Badge } from '@/components/ui/badge'
+import { Loader2, Download, RefreshCw, AlertCircle, CheckCircle2, Settings2, FileText, Server } from 'lucide-vue-next'
+
 const VuePdfEmbed = defineAsyncComponent(() => import('vue-pdf-embed'))
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from '@/components/ui/tooltip'
+const { locale, t } = useI18n()
 
-import { useColorMode, onKeyStroke } from '@vueuse/core'
+const STORAGE_KEYS = {
+  locale: 'pdf-babel.locale',
+  preferences: 'pdf-babel.preferences',
+  recentTranslations: 'pdf-babel.recentTranslations',
+}
 
-const { t, locale } = useI18n()
+const PREFERENCE_KEYS = [
+  'lang_in',
+  'lang_out',
+  'service',
+  'no_dual',
+  'no_mono',
+  'pages',
+  'qps',
+  'pool_max_workers',
+  'term_pool_max_workers',
+  'watermark_output_mode',
+  'max_pages_per_part',
+  'ignore_cache',
+  'custom_system_prompt',
+  'skip_scanned_detection',
+  'ocr_workaround',
+  'auto_enable_ocr_workaround',
+  'split_short_lines',
+  'short_line_split_factor',
+  'auto_extract_glossary',
+  'save_auto_extracted_glossary',
+  'only_include_translated_page',
+  'skip_clean',
+  'enhance_compatibility',
+  'disable_rich_text_translate',
+  'primary_font_family',
+  'accent_color',
+]
 
-const colorMode = useColorMode({
-  disableTransition: false  // Enable smooth 300ms color transitions
-})
-
-// Sync meta theme-color with color mode
-watch(colorMode, (newMode) => {
-  const themeColor = newMode === 'dark' ? '#18181b' : '#ffffff'
-  const metaThemeColor = document.querySelector('meta[name="theme-color"]')
-  if (metaThemeColor) {
-    metaThemeColor.setAttribute('content', themeColor)
-  }
-}, { immediate: true })
+const DEFAULT_PREFERENCES = {
+  lang_in: 'en',
+  lang_out: 'zh',
+  service: '',
+  service_credentials: {},
+  no_dual: false,
+  no_mono: false,
+  pages: '',
+  qps: undefined,
+  pool_max_workers: undefined,
+  term_pool_max_workers: undefined,
+  watermark_output_mode: 'no_watermark',
+  max_pages_per_part: undefined,
+  ignore_cache: false,
+  custom_system_prompt: '',
+  skip_scanned_detection: false,
+  ocr_workaround: false,
+  auto_enable_ocr_workaround: false,
+  split_short_lines: false,
+  short_line_split_factor: 0.8,
+  auto_extract_glossary: true,
+  save_auto_extracted_glossary: true,
+  only_include_translated_page: false,
+  skip_clean: false,
+  enhance_compatibility: false,
+  disable_rich_text_translate: false,
+  primary_font_family: undefined,
+  accent_color: 'black',
+}
 
 const config = ref(null)
 const versionInfo = ref(null)
+const showSettings = ref(false)
+const pendingFiles = ref([])
 const selectedFile = ref(null)
+const selectedFilePreviewUrl = ref(null)
 const isTranslating = ref(false)
 const taskId = ref(null)
 const taskStatus = ref(null)
-const logs = ref([])
-const stages = ref([])
-const activeStageIndex = computed(() => {
-  const index = stages.value.findIndex(s => s.status === 'active')
-  if (index !== -1) return index
-  if (stages.value.length > 0 && stages.value.every(s => s.status === 'completed')) return stages.value.length - 1
-  return 0
-})
+const overallProgress = ref(null)
 const currentStage = ref(null)
-const downloadUrl = ref(null)
+const stages = ref([])
 const monoPdfUrl = ref(null)
 const dualPdfUrl = ref(null)
-const isLogsExpanded = ref(false)
-const overallProgress = ref(null)
-const isTranslationComplete = computed(() => taskStatus.value === 'completed')
-
-// Check if user is on the index/home view (no translation in progress or completed)
-const isOnIndex = computed(() => 
-  !isTranslating.value && 
-  overallProgress.value === null && 
-  taskStatus.value !== 'completed' && 
-  taskStatus.value !== 'failed'
-)
-
-// Check if running in PWA mode (standalone or window-controls-overlay)
-const isPWA = computed(() => {
-  if (typeof window === 'undefined') return false
-  const isStandalone = window.matchMedia('(display-mode: standalone)').matches
-  const isWcoMode = window.matchMedia('(display-mode: window-controls-overlay)').matches
-  return isStandalone || isWcoMode
-})
-
-// Ensure installed PWA windows display a consistent title
-watchEffect(() => {
-  if (isPWA.value && typeof document !== 'undefined') {
-    document.title = 'PDFMathTranslate'
-  }
-})
-const serviceStatus = ref('ready') // ready, busy, error
-const healthInfo = ref(null) // Store health information including CPU load
-const connectionAttempts = ref(0) // Track connection attempts for error reporting
-const showSettings = ref(false)
-const isSaved = ref(false)
-const isLanguageSwitching = ref(false)
-const openAccordionItem = ref('')
-
-// Recent translated files
+const errorMessage = ref('')
 const recentFiles = ref([])
-
-// Development mode
-const devMode = ref(false)
-const devModeFromServer = ref(false)
-const escPressCount = ref(0)
-const escPressTimeout = ref(null)
-const DEV_MODE_ESC_PRESSES = 4
-const ESC_PRESS_TIMEOUT_MS = 3000
-
-// Load dev mode preference from localStorage
-const loadDevModePreference = () => {
-  const stored = localStorage.getItem('devMode')
-  if (stored) {
-    return stored === 'true'
-  }
-  return false
-}
-
-// Save dev mode preference
-const saveDevModePreference = (enabled) => {
-  localStorage.setItem('devMode', enabled ? 'true' : 'false')
-}
-
-// Toggle dev mode
-const toggleDevMode = () => {
-  devMode.value = !devMode.value
-  saveDevModePreference(devMode.value)
-}
-
-// Preview URL for selected file
-const selectedFilePreviewUrl = ref(null)
-
-watch(selectedFile, (newFile) => {
-    // Revoke previous URL to avoid memory leaks
-    if (selectedFilePreviewUrl.value) {
-        URL.revokeObjectURL(selectedFilePreviewUrl.value)
-        selectedFilePreviewUrl.value = null
-    }
-    
-    if (newFile && newFile instanceof File) {
-        selectedFilePreviewUrl.value = URL.createObjectURL(newFile)
-    }
+const serviceStatus = ref('ready')
+const healthInfo = ref({
+  active_jobs: 0,
+  queued_jobs: 0,
+  total_jobs: 0,
 })
-
-// Clean up on unmount
-onUnmounted(() => {
-    if (selectedFilePreviewUrl.value) {
-        URL.revokeObjectURL(selectedFilePreviewUrl.value)
-    }
-})
-
-const isWco = ref(false)
-
-let wcoMql = null
-let standaloneMql = null
-
-const checkWco = () => {
-  // Only enable WCO if we are in the correct display mode or the API reports it's visible
-  // 1. Check modern media query
-  const isWcoMode = window.matchMedia('(display-mode: window-controls-overlay)').matches
-  
-  // 2. Check if we are in standalone and the overlay is visible via API
-  const isStandalone = window.matchMedia('(display-mode: standalone)').matches
-  const isApiVisible = 'windowControlsOverlay' in navigator && 
-      navigator.windowControlsOverlay && 
-                       navigator.windowControlsOverlay.visible
-
-  if (isWcoMode || (isStandalone && isApiVisible)) {
-    isWco.value = true
-  } else {
-    isWco.value = false
-  }
-}
-
-// Health monitoring
 const healthPollInterval = ref(null)
 
-const fetchHealthInfo = async () => {
+const batchQueue = ref([])
+const currentBatchIndex = ref(-1)
+
+const loadPreferences = () => {
   try {
-    const response = await api.getHealth()
-    // Normalize backend fields to frontend expected shape
-    const data = response.data
-    healthInfo.value = {
-      ...data,
-      active_tasks: data.active_jobs ?? data.active_tasks ?? 0,
-      total_tasks: data.total_jobs ?? data.total_tasks ?? 0,
-      // Flatten nested cpu/memory into the shape ProjectInfo expects
-      cpu_percent: data.cpu?.usage_percent ?? undefined,
-      memory_percent: data.cpu?.memory?.percent ?? undefined,
-      memory_used_gb: data.cpu?.memory?.used_mb != null
-        ? (data.cpu.memory.used_mb / 1024).toFixed(1)
-        : undefined,
-      memory_total_gb: data.cpu?.memory?.total_mb != null
-        ? (data.cpu.memory.total_mb / 1024).toFixed(1)
-        : undefined,
-    }
-    if (data.status) {
-      // Backend returns "ok", frontend expects "ready"
-      serviceStatus.value = data.status === 'ok' ? 'ready' : data.status
-    }
-    // Reset connection attempts on successful connection
-    connectionAttempts.value = 0
+    const stored = localStorage.getItem(STORAGE_KEYS.preferences)
+    return stored ? JSON.parse(stored) : {}
   } catch (error) {
-    console.error('Failed to fetch health info:', error)
-    serviceStatus.value = 'error'
-    healthInfo.value = { status: 'error', error: error.message }
-    // Increment connection attempts on error
-    connectionAttempts.value++
+    console.error('Failed to parse saved preferences:', error)
+    return {}
   }
 }
 
-onMounted(async () => {
-  // Initialize WCO detection
-  checkWco()
-  
-  if ('windowControlsOverlay' in navigator) {
-    navigator.windowControlsOverlay.addEventListener('geometrychange', checkWco)
-  }
-  
-  // Listen for display mode changes
-  wcoMql = window.matchMedia('(display-mode: window-controls-overlay)')
-  standaloneMql = window.matchMedia('(display-mode: standalone)')
-  
-  try {
-    wcoMql.addEventListener('change', checkWco)
-    standaloneMql.addEventListener('change', checkWco)
-  } catch (e) {
-    // Fallback for older browsers that use addListener
-    wcoMql.addListener(checkWco)
-    standaloneMql.addListener(checkWco)
-  }
-
-  try {
-    const response = await api.getConfig()
-    config.value = response.data
-    serviceStatus.value = 'ready'
-    
-    // Check if dev mode was enabled via CLI (--gui-dev)
-    if (response.data.dev_mode) {
-      devModeFromServer.value = true
-      devMode.value = true
-    } else {
-      // Load from localStorage if not from server
-      devMode.value = loadDevModePreference()
+const savePreferences = (preferences) => {
+  const sanitized = {}
+  for (const key of PREFERENCE_KEYS) {
+    const value = preferences[key]
+    if (value !== undefined && value !== null && value !== '') {
+      sanitized[key] = value
     }
+    if (typeof value === 'boolean') {
+      sanitized[key] = value
+    }
+  }
+  localStorage.setItem(STORAGE_KEYS.preferences, JSON.stringify(sanitized))
+}
+
+const loadRecentFiles = () => {
+  try {
+    const stored = localStorage.getItem(STORAGE_KEYS.recentTranslations)
+    return stored ? JSON.parse(stored) : []
   } catch (error) {
-    console.error('Failed to load config:', error)
-    serviceStatus.value = 'error'
+    console.error('Failed to parse recent files:', error)
+    return []
   }
-
-  // Start health monitoring
-  fetchHealthInfo() // Initial fetch
-  healthPollInterval.value = setInterval(fetchHealthInfo, 10000) // Poll every 10 seconds
-})
-
-onUnmounted(() => {
-  if ('windowControlsOverlay' in navigator) {
-    navigator.windowControlsOverlay.removeEventListener('geometrychange', checkWco)
-  }
-  
-  // Clean up media query listeners
-  if (wcoMql) {
-    try {
-      wcoMql.removeEventListener('change', checkWco)
-    } catch (e) {
-      wcoMql.removeListener(checkWco)
-    }
-  }
-  if (standaloneMql) {
-    try {
-      standaloneMql.removeEventListener('change', checkWco)
-    } catch (e) {
-      standaloneMql.removeListener(checkWco)
-    }
-  }
-
-  // Clean up health polling
-  if (healthPollInterval.value) {
-    clearInterval(healthPollInterval.value)
-  }
-})
-
-// Load preferences from localStorage for a specific backend
-const loadPreferences = (backend = null) => {
-  // If no backend specified, try to load from legacy storage or default to fast
-  if (!backend) {
-    const legacyStored = localStorage.getItem('translationPreferences')
-    if (legacyStored) {
-      try {
-        const legacy = JSON.parse(legacyStored)
-        // Migrate legacy preferences to backend-specific storage
-        const legacyBackend = legacy.translationBackend || 'fast'
-        const key = `translationPreferences_${legacyBackend}`
-        // Only migrate if backend-specific storage doesn't exist
-        if (!localStorage.getItem(key)) {
-          localStorage.setItem(key, legacyStored)
-        }
-        // Clean up legacy storage after migration
-        localStorage.removeItem('translationPreferences')
-        return legacy
-      } catch (e) {
-        console.error('Failed to parse stored preferences:', e)
-      }
-    }
-    // Default to fast if no legacy storage
-    backend = 'fast'
-  }
-  
-  const key = `translationPreferences_${backend}`
-  const stored = localStorage.getItem(key)
-  if (stored) {
-    try {
-      return JSON.parse(stored)
-    } catch (e) {
-      console.error(`Failed to parse stored preferences for ${backend}:`, e)
-    }
-  }
-  return null
 }
 
-// Save preferences to localStorage for a specific backend
-const savePreferences = (preferences, backend) => {
-  if (!backend) {
-    backend = preferences.translationBackend || 'fast'
-  }
-  
-  // Create a clean copy without undefined values for storage
-  const toStore = { ...preferences }
-  // Remove undefined values
-  Object.keys(toStore).forEach(key => {
-    if (toStore[key] === undefined) {
-      delete toStore[key]
-    }
-  })
-  
-  const key = `translationPreferences_${backend}`
-  localStorage.setItem(key, JSON.stringify(toStore))
+const saveRecentFiles = () => {
+  localStorage.setItem(STORAGE_KEYS.recentTranslations, JSON.stringify(recentFiles.value.slice(0, 10)))
 }
 
-// Default preferences
-const defaultPreferences = {
-  source: 'File',
-  langFrom: 'English',
-  langTo: 'Simplified Chinese',
-  service: 'google', // Default service (internal value)
-  url: '', // URL for Link source type
-  // Translation backend mode: 'fast' (pdf2zh) or 'precise' (pdf2zh_next)
-  translationBackend: 'fast', // Default to fast mode
-  // Output preferences
-  // By default, both mono and dual outputs are enabled
-  // noMono: false means mono output is enabled
-  // noDual: false means dual/bilingual output is enabled
-  noMono: false,
-  noDual: false,
-  dualTranslateFirst: false,
-  useAlternatingPagesDual: false,
-  // Rate limiting
-  qps: undefined,
-  poolMaxWorkers: undefined,
-  termQps: undefined,
-  termPoolMaxWorkers: undefined,
-  // PDF processing
-  pages: undefined,
-  watermarkOutputMode: 'no_watermark',
-  maxPagesPerPart: undefined,
-  // Translation options
-  minTextLength: undefined,
-  ignoreCache: false,
-  customSystemPrompt: undefined,
-  // Appearance
-  accentColor: 'black',
-  // Advanced options
-  translateTableText: false,
-  skipScannedDetection: false,
-  ocrWorkaround: false,
-  autoEnableOcrWorkaround: false,
-}
-
-// Initialize with the last-selected backend, falling back to 'fast'
-const initialBackend = localStorage.getItem('selectedBackend') || 'fast'
-const initialPreferences = loadPreferences(initialBackend) || loadPreferences() || {}
 const translationParams = reactive({
-  ...defaultPreferences,
-  ...initialPreferences,
-  translationBackend: initialPreferences.translationBackend || initialBackend,
+  ...DEFAULT_PREFERENCES,
+  ...loadPreferences(),
+  service_credentials: {},
 })
 
-// Apply accent color dynamically
-watch(() => translationParams.accentColor, (newColor) => {
-  if (newColor) {
-    document.documentElement.setAttribute('data-accent', newColor)
-  }
-}, { immediate: true })
+const isBatchMode = computed(() => batchQueue.value.length > 0)
+const completedBatchCount = computed(() => batchQueue.value.filter(task => ['completed', 'failed', 'cancelled'].includes(task.status)).length)
+const isBatchComplete = computed(() => isBatchMode.value && batchQueue.value.length > 0 && batchQueue.value.every(task => ['completed', 'failed', 'cancelled'].includes(task.status)))
+const isTranslationComplete = computed(() => taskStatus.value === 'completed')
+const hasTerminalError = computed(() => ['failed', 'cancelled'].includes(taskStatus.value))
+const canStartTranslation = computed(() => {
+  return pendingFiles.value.length > 0 && !isTranslating.value && !!translationParams.service
+})
 
-// Track if we're currently switching backends to avoid saving during switch
-let isSwitchingBackend = false
-
-// Watch for backend changes and switch configurations
 watch(
-  () => translationParams.translationBackend,
-  (newBackend, oldBackend) => {
-    if (oldBackend && newBackend !== oldBackend && !isSwitchingBackend) {
-      isSwitchingBackend = true
-
-      // Remember the user's backend selection
-      localStorage.setItem('selectedBackend', newBackend)
-
-      // Save current configuration for the old backend
-      const currentConfig = { ...translationParams }
-      // Ensure the saved config has the correct backend marker
-      currentConfig.translationBackend = oldBackend
-      savePreferences(currentConfig, oldBackend)
-      
-      // Load configuration for the new backend
-      const newConfig = loadPreferences(newBackend) || {}
-      
-      // Update translationParams with new backend's config
-      // First, reset all non-backend fields to defaults
-      Object.keys(defaultPreferences).forEach(key => {
-        if (key !== 'translationBackend') {
-          translationParams[key] = defaultPreferences[key]
-        }
-      })
-      
-      // Then apply the new backend's saved config
-      Object.keys(newConfig).forEach(key => {
-        if (key !== 'translationBackend' && defaultPreferences.hasOwnProperty(key)) {
-          translationParams[key] = newConfig[key]
-        }
-      })
-      
-      // Ensure translationBackend is set correctly
-      translationParams.translationBackend = newBackend
-      
-      isSwitchingBackend = false
+  () => translationParams.accent_color,
+  (color) => {
+    if (color) {
+      document.documentElement.setAttribute('data-accent', color)
     }
-  }
+  },
+  { immediate: true }
 )
 
-// Save preferences to localStorage whenever they change (but not during backend switch)
-let saveTimeout
 watch(
   translationParams,
-  (newParams) => {
-    if (isSwitchingBackend) {
-      return // Don't save during backend switch
-    }
-    
-    const backend = newParams.translationBackend || 'fast'
-    savePreferences(newParams, backend)
-
-    // Show saved indicator
-    isSaved.value = true
-    if (saveTimeout) clearTimeout(saveTimeout)
-    saveTimeout = setTimeout(() => {
-      isSaved.value = false
-    }, 1000)
+  (value) => {
+    savePreferences(value)
   },
   { deep: true }
 )
 
-  onMounted(async () => {
-  try {
-    const [response, versionResponse] = await Promise.all([
-      api.getConfig(),
-      api.getVersion().catch(() => ({ data: {} }))
-    ])
-    config.value = response.data
-    versionInfo.value = versionResponse.data
-    serviceStatus.value = 'ready'
-
-    const backends = response.data.backends || {}
-    const currentBackend = translationParams.translationBackend || 'fast'
-    const currentPreferences = loadPreferences(currentBackend)
-    const savedService = currentPreferences?.service || translationParams.service
-
-    // Validate saved service against config — fall back to first available if invalid
-    const validServiceValues = (response.data.services || []).map(s => s.value)
-    if (savedService && !validServiceValues.includes(savedService)) {
-      console.log(`Service '${savedService}' not found in config, switching to ${validServiceValues[0] || 'google'}`)
-      translationParams.service = validServiceValues[0] || 'google'
-    }
-
-    // If user has fast saved but it's not available, switch to precise
-    if (currentBackend === 'fast' && backends.fast && !backends.fast.available) {
-      console.log('Fast backend not available, switching to precise')
-      translationParams.translationBackend = 'precise'
-    }
-    // Set default backend mode from server if not already set
-    else if (response.data.default_backend && !currentPreferences) {
-      translationParams.translationBackend = response.data.default_backend
-      // Load the default backend's preferences
-      const defaultBackendPrefs = loadPreferences(response.data.default_backend)
-      if (defaultBackendPrefs) {
-        Object.assign(translationParams, defaultBackendPrefs)
-        translationParams.translationBackend = response.data.default_backend
-      }
-    }
-  } catch (error) {
-    console.error('Failed to load config:', error)
-    serviceStatus.value = 'error'
+watch(selectedFile, (file) => {
+  if (selectedFilePreviewUrl.value) {
+    URL.revokeObjectURL(selectedFilePreviewUrl.value)
+    selectedFilePreviewUrl.value = null
+  }
+  if (file instanceof File) {
+    selectedFilePreviewUrl.value = URL.createObjectURL(file)
   }
 })
-
-const batchQueue = ref([])
-const currentBatchIndex = ref(-1)
-const isBatchMode = computed(() => batchQueue.value.length > 0)
-const completedBatchCount = computed(() => batchQueue.value.filter(t => t.status === 'completed' || t.status === 'failed').length)
-const isBatchComplete = computed(() => isBatchMode.value && batchQueue.value.length > 0 && batchQueue.value.every(t => t.status === 'completed' || t.status === 'failed'))
-
-const resetBatch = () => {
-  resetTranslation()
-}
-
-const retryBatch = () => {
-  // Find failed tasks
-  const failedTasks = batchQueue.value.filter(t => t.status === 'failed')
-  if (failedTasks.length === 0) return
-
-  // Reset their status
-  failedTasks.forEach(t => {
-    t.status = 'pending'
-    t.progress = 0
-    t.logs = []
-    t.error = null
-  })
-
-  // Find the index of the first pending task (which was failed)
-  const firstPendingIndex = batchQueue.value.findIndex(t => t.status === 'pending')
-  if (firstPendingIndex !== -1) {
-    currentBatchIndex.value = firstPendingIndex
-    processNextTask()
-  }
-}
-
-const handleFileSelected = async (files) => {
-  // Handle single file or array of files
-  const fileList = Array.isArray(files) ? files : [files]
-  
-  if (fileList.length === 0) return
-  
-  console.log('Files selected:', fileList.length, 'Source:', translationParams.source)
-  
-  // If multiple files or we already have a queue, treat as batch
-  if (fileList.length > 1) {
-    // Reset existing state
-    resetTranslation()
-    
-    // Create tasks
-    batchQueue.value = fileList.map((file, index) => ({
-      id: Date.now() + index,
-      file: file,
-      status: 'pending',
-      taskId: null,
-      progress: 0,
-      logs: [],
-      stages: [],
-      error: null,
-      monoPdfUrl: null,
-      dualPdfUrl: null
-    }))
-    
-    translationParams.source = 'File'
-    
-    // Start batch
-    await nextTick()
-    startBatchTranslation()
-  } else {
-    // Single file - standard behavior
-    const file = fileList[0]
-    selectedFile.value = file
-    if (file) {
-      translationParams.source = 'File'
-    }
-    if (file && !isTranslating.value) {
-      await nextTick()
-      startTranslation()
-    }
-  }
-}
-
-// Watch for URL changes to auto-start translation for Link source
-watch(() => translationParams.url, async (newUrl, oldUrl) => {
-  // Only auto-start if URL is valid and not empty, and we're not already translating
-  if (newUrl && newUrl.trim() && !isTranslating.value && translationParams.source === 'Link' && newUrl !== oldUrl) {
-    // Debounce to avoid starting multiple times
-    await nextTick()
-    setTimeout(() => {
-      if (translationParams.url && translationParams.url.trim() && !isTranslating.value) {
-        startTranslation()
-      }
-    }, 500)
-  }
-})
-
-// Process logs to extract stages and progress
-const processLogs = (logEntries) => {
-  if (!logEntries || logEntries.length === 0) return
-
-  let foundStages = [...stages.value]
-  let current = currentStage.value
-  let overall = overallProgress.value
-
-  // Helper to parse Python-dict-like strings
-  const parseLogEntry = (logStr) => {
-    try {
-      // Try standard JSON first
-      if (logStr.startsWith('{') && logStr.includes('"type"')) {
-         try { return JSON.parse(logStr) } catch(e){}
-      }
-      
-      // Handle Python dict string format
-      // Replace None/True/False with JS equivalents
-      const sanitized = logStr
-          .replace(/: None/g, ': null')
-          .replace(/: True/g, ': true')
-          .replace(/: False/g, ': false')
-      
-      // Use new Function to parse loosely
-      // This handles single quotes used in Python dicts
-      return new Function('return ' + sanitized)()
-    } catch (e) {
-      return null
-    }
-  }
-
-  // Iterate through all logs to rebuild state
-  // Optimization: only process new logs if we could track index, but here we process all for correctness
-  // In a real app with many logs, we should optimize. For now, it's fine.
-  logEntries.forEach(log => {
-    if (typeof log !== 'string') return
-    
-    // Check if it's a progress-related log before parsing to save perf
-    if (!log.includes('type') && !log.includes('stage')) return
-
-    const data = parseLogEntry(log)
-    if (!data) return
-
-    if (data.type === 'stage_summary') {
-      // Only set stages if not already set or if different
-      if (foundStages.length === 0) {
-        foundStages = data.stages.map(s => ({
-            name: s.name,
-            percent: s.percent,
-            status: 'pending'
-        }))
-      }
-    } else if (data.type === 'progress_start') {
-      current = data.stage
-      if (foundStages.length > 0) {
-        const s = foundStages.find(st => st.name === data.stage)
-        if (s) {
-            s.status = 'active'
-            // Mark previous stages as completed
-            const idx = foundStages.findIndex(st => st.name === data.stage)
-            if (idx > 0) {
-                for(let i=0; i<idx; i++) {
-                    if (foundStages[i].status !== 'completed') {
-                        foundStages[i].status = 'completed'
-                    }
-                }
-            }
-        }
-      }
-      if (data.overall_progress !== undefined) overall = data.overall_progress
-    } else if (data.type === 'progress_update') {
-      if (data.overall_progress !== undefined) overall = data.overall_progress
-    } else if (data.type === 'progress_end') {
-      if (foundStages.length > 0) {
-        const s = foundStages.find(st => st.name === data.stage)
-        if (s) s.status = 'completed'
-      }
-      if (data.overall_progress !== undefined) overall = data.overall_progress
-    }
-  })
-
-  // Update state
-  if (foundStages.length > 0) {
-    stages.value = foundStages
-  }
-  
-  if (current) {
-    currentStage.value = current
-  }
-
-  if (overall !== null) {
-    overallProgress.value = overall
-  }
-}
-
-// Watch logs to extract progress
-watch(logs, (newLogs) => {
-  processLogs(newLogs)
-}, { deep: true })
-
-const startBatchTranslation = async () => {
-  if (batchQueue.value.length === 0) return
-  
-  isTranslating.value = true
-  serviceStatus.value = 'busy'
-  currentBatchIndex.value = 0
-  
-  await processNextTask()
-}
-
-const processNextTask = async () => {
-  if (currentBatchIndex.value >= batchQueue.value.length) {
-    // All tasks done
-    isTranslating.value = false
-    serviceStatus.value = 'ready'
-    taskStatus.value = 'completed' // Global status
-    return
-  }
-  
-  const task = batchQueue.value[currentBatchIndex.value]
-  task.status = 'processing'
-  
-  // Update global state to reflect current task
-  selectedFile.value = task.file
-  logs.value = []
-  stages.value = []
-  currentStage.value = null
-  overallProgress.value = 0
-  taskStatus.value = 'processing'
-  
-  // Start translation for this task
-  await startTranslation(task)
-}
-
-const startTranslation = async (task = null) => {
-  if (!task && translationParams.source === 'File' && !selectedFile.value) return
-  if (!task && translationParams.source === 'Link' && !translationParams.url) return
-  
-  // If called directly (single file), set global state
-  if (!task) {
-    isTranslating.value = true
-    serviceStatus.value = 'busy'
-    logs.value = []
-    stages.value = []
-    currentStage.value = null
-    overallProgress.value = null
-    downloadUrl.value = null
-    monoPdfUrl.value = null
-    dualPdfUrl.value = null
-    taskStatus.value = null
-  }
-  
-  try {
-    // Build translation params with file included
-    const fileToUpload = task ? task.file : selectedFile.value
-    const params = {
-      file: fileToUpload,
-      lang_in: translationParams.langFrom,
-      lang_out: translationParams.langTo,
-      service: translationParams.service,
-      backend: translationParams.translationBackend || 'fast',
-    }
-
-    // Include optional params from translationParams
-    if (translationParams.pages) params.pages = translationParams.pages
-    if (translationParams.thread) params.thread = translationParams.thread
-    if (translationParams.prompt) params.prompt = translationParams.prompt
-
-    // Pass extra data as JSON in 'data' field for complex/nested values
-    const data = {}
-    if (translationParams.envs) data.envs = translationParams.envs
-    if (translationParams.skip_subset_fonts) data.skip_subset_fonts = translationParams.skip_subset_fonts
-    if (translationParams.ignore_cache) data.ignore_cache = translationParams.ignore_cache
-    if (Object.keys(data).length > 0) {
-      params.data = JSON.stringify(data)
-    }
-
-    Object.keys(params).forEach(key => {
-      if (params[key] === undefined || params[key] === '') {
-        delete params[key]
-      }
-    })
-
-    const translateResponse = await api.translate(params)
-    const newTaskId = translateResponse.data.id
-    
-    if (task) {
-      task.taskId = newTaskId
-    } else {
-      taskId.value = newTaskId
-    }
-    
-    // 3. Poll Status
-    pollStatus(task)
-    
-  } catch (error) {
-    console.error('Translation failed:', error)
-    if (task) {
-      task.status = 'failed'
-      task.error = error.message
-      // Move to next task even if this one failed
-      currentBatchIndex.value++
-      setTimeout(processNextTask, 1000)
-    } else {
-      isTranslating.value = false
-      serviceStatus.value = 'error'
-      taskStatus.value = 'failed'
-      logs.value.push(`Error: ${error.message}`)
-      isLogsExpanded.value = true
-    }
-  }
-}
-
-const pollStatus = async (task = null) => {
-  const currentTaskId = task ? task.taskId : taskId.value
-  if (!currentTaskId) return
-  
-  try {
-    const response = await api.getStatus(currentTaskId)
-    const status = response.data.status
-    const progress = response.data.progress || {}
-    const progressPct = progress.total > 0
-      ? Math.round((progress.current / progress.total) * 100)
-      : 0
-
-    if (task) {
-      task.status = status
-      if (batchQueue.value[currentBatchIndex.value] === task) {
-        taskStatus.value = status
-      }
-      if (progress.total > 0) {
-        task.progress = progressPct
-        overallProgress.value = progressPct
-      }
-    } else {
-      taskStatus.value = status
-      if (progress.total > 0) {
-        overallProgress.value = progressPct
-      }
-    }
-
-    if (status === 'completed') {
-      const hasResult = response.data.has_result
-      if (task) {
-        task.progress = 100
-        task.monoPdfUrl = hasResult ? `/v1/translate/${currentTaskId}/download/mono` : null
-        task.dualPdfUrl = hasResult ? `/v1/translate/${currentTaskId}/download/dual` : null
-
-        // Save to recent files
-        saveToRecentFiles(
-          currentTaskId,
-          task.file.name,
-          translationParams.langFrom,
-          translationParams.langTo,
-          hasResult,
-          hasResult
-        ).catch(err => console.error('Failed to save recent file:', err))
-
-        // Move to next task
-        currentBatchIndex.value++
-        setTimeout(processNextTask, 500)
-      } else {
-        isTranslating.value = false
-        serviceStatus.value = 'ready'
-        overallProgress.value = 100
-        if (hasResult) {
-          monoPdfUrl.value = `/v1/translate/${currentTaskId}/download/mono`
-          dualPdfUrl.value = `/v1/translate/${currentTaskId}/download/dual`
-        }
-
-        const filename = selectedFile.value?.name || translationParams.url || 'Translated PDF'
-        saveToRecentFiles(
-          currentTaskId,
-          filename,
-          translationParams.langFrom,
-          translationParams.langTo,
-          hasResult,
-          hasResult
-        ).catch(err => console.error('Failed to save recent file:', err))
-
-        if (monoPdfUrl.value) downloadMono()
-        if (dualPdfUrl.value) setTimeout(downloadDual, 1000)
-      }
-    } else if (status === 'failed') {
-      if (task) {
-        task.error = response.data.error
-        // Move to next task
-        currentBatchIndex.value++
-        setTimeout(processNextTask, 1000)
-      } else {
-        isTranslating.value = false
-        serviceStatus.value = 'error'
-        overallProgress.value = null
-        logs.value.push(`Error: ${response.data.error}`)
-        isLogsExpanded.value = true
-      }
-    } else {
-      setTimeout(() => pollStatus(task), 1000)
-    }
-  } catch (error) {
-    console.error('Status check failed:', error)
-    if (task) {
-      task.status = 'failed'
-      task.error = error.message
-      currentBatchIndex.value++
-      setTimeout(processNextTask, 1000)
-    } else {
-      isTranslating.value = false
-      serviceStatus.value = 'error'
-    }
-  }
-}
 
 const resetTranslation = () => {
   isTranslating.value = false
   taskId.value = null
   taskStatus.value = null
-  logs.value = []
-  stages.value = []
-  currentStage.value = null
   overallProgress.value = null
-  downloadUrl.value = null
+  currentStage.value = null
+  stages.value = []
   monoPdfUrl.value = null
   dualPdfUrl.value = null
-  selectedFile.value = null
-  
-  // Reset batch state
+  errorMessage.value = ''
   batchQueue.value = []
   currentBatchIndex.value = -1
+  serviceStatus.value = 'ready'
 }
 
-const stopTranslation = async () => {
-  if (!taskId.value) return
-  
-  try {
-    await api.cancelTranslation(taskId.value)
-    // Immediate feedback
-    isTranslating.value = false
-    logs.value.push(t('translation.stoppedByUser') || 'Stopped by user')
-    // Delay slightly to let the user see it stopped? 
-    // Or just reset immediately as requested "go back to the main file selector"
-    resetTranslation()
-  } catch (error) {
-    console.error('Failed to stop translation:', error)
-  }
-}
-
-const handleDownload = async (downloadFn) => {
-    try {
-        if (!taskId.value) return;
-        const response = await downloadFn(taskId.value);
-        const blob = new Blob([response.data], { type: response.headers['content-type'] });
-        const url = window.URL.createObjectURL(blob);
-        const link = document.createElement('a');
-        link.href = url;
-        
-        let filename = 'download.pdf';
-        const disposition = response.headers['content-disposition'];
-        if (disposition) {
-            const utf8Match = disposition.match(/filename\*=UTF-8''([^;]+)/);
-            if (utf8Match) {
-                filename = decodeURIComponent(utf8Match[1]);
-            } else {
-                const filenameMatch = disposition.match(/filename="?([^"]+)"?/);
-                if (filenameMatch) {
-                    filename = filenameMatch[1];
-                }
-            }
-        }
-        
-        link.setAttribute('download', filename);
-        document.body.appendChild(link);
-        link.click();
-        
-        setTimeout(() => {
-            document.body.removeChild(link);
-            window.URL.revokeObjectURL(url);
-        }, 100);
-    } catch (error) {
-        console.error('Download failed:', error);
-    }
-}
-
-const downloadResult = async () => {
-    await handleDownload(api.downloadTaskMono);
-}
-
-const downloadMono = async () => {
-    await handleDownload(api.downloadTaskMono);
-}
-
-const downloadDual = async () => {
-    await handleDownload(api.downloadTaskDual);
-}
-
-const handleLanguageChange = (langCode) => {
-  isLanguageSwitching.value = true
-  setTimeout(() => {
-    locale.value = langCode
-    localStorage.setItem('locale', langCode)
-    setTimeout(() => {
-      isLanguageSwitching.value = false
-    }, 50)
-  }, 200)
-}
-
-const handleOpenServiceSettings = () => {
-  showSettings.value = true
-  openAccordionItem.value = 'service'
-}
-
-// Handle going home - reset to index view if not already there
-const handleGoHome = () => {
-  // Close settings if open
-  if (showSettings.value) {
-    showSettings.value = false
-  }
-  // Only reset if not already on index to avoid unnecessary refresh
-  if (!isOnIndex.value) {
-    resetTranslation()
-  }
-}
-
-// Keyboard Shortcuts
-onKeyStroke(['n', 'N', 'r', 'R'], (e) => {
-  if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey) {
-    e.preventDefault()
-    if (isTranslating.value) {
-      stopTranslation()
-    } else {
-      resetTranslation()
-    }
-  }
-})
-
-onKeyStroke([',', 'p', 'P'], (e) => {
-  if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey) {
-    e.preventDefault()
-    showSettings.value = !showSettings.value
-  }
-})
-
-onKeyStroke(['d', 'D'], (e) => {
-  if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey) {
-    e.preventDefault()
-    colorMode.value = colorMode.value === 'dark' ? 'light' : 'dark'
-  }
-})
-
-onKeyStroke('Escape', (e) => {
-  // Don't toggle if an input is focused
-  const target = e.target
-  if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) return
-  
-  // Optional: Check if a dropdown is open (heuristic)
-  if (document.querySelector('[role="menu"]')) return
-
-  e.preventDefault()
-  
-  // Track ESC presses for dev mode activation
-  escPressCount.value++
-  
-  if (escPressTimeout.value) {
-    clearTimeout(escPressTimeout.value)
-  }
-  
-  if (escPressCount.value >= DEV_MODE_ESC_PRESSES) {
-    toggleDevMode()
-    escPressCount.value = 0
-    return
-  }
-  
-  escPressTimeout.value = setTimeout(() => {
-    escPressCount.value = 0
-  }, ESC_PRESS_TIMEOUT_MS)
-  
-  showSettings.value = !showSettings.value
-})
-
-onKeyStroke(['l', 'L'], (e) => {
-  if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey) {
-    e.preventDefault()
-    document.getElementById('language-menu-trigger')?.click()
-  }
-})
-
-// Download shortcuts
-onKeyStroke('1', (e) => {
-  if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey) {
-    e.preventDefault()
-    if (isTranslationComplete.value && monoPdfUrl.value) {
-      downloadMono()
-    }
-  }
-})
-
-onKeyStroke('2', (e) => {
-  if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey) {
-    e.preventDefault()
-    if (isTranslationComplete.value && dualPdfUrl.value) {
-      downloadDual()
-    }
-  }
-})
-
-// Recent Files Functions
-const loadRecentFiles = () => {
-  const stored = localStorage.getItem('recentTranslations')
-  if (stored) {
-    try {
-      return JSON.parse(stored)
-    } catch (e) {
-      console.error('Failed to parse recent translations:', e)
-    }
-  }
-  return []
-}
-
-// Validate recent files - check if they still exist on the server
-// Files without server availability are kept but marked, so we can still show their cached preview
-const validateRecentFiles = async (files) => {
-  if (!files || files.length === 0) return []
-  
-  const validationPromises = files.map(async (file) => {
-    try {
-      await api.checkTaskExists(file.taskId)
-      return { ...file, serverAvailable: true }
-    } catch (error) {
-      // Task no longer exists on server, but we keep the cached data
-      console.log(`Recent file ${file.filename} (${file.taskId}) no longer on server`)
-      return { ...file, serverAvailable: false }
-    }
-  })
-  
-  const results = await Promise.all(validationPromises)
-  
-  // Filter out files that have no thumbnail AND no server availability (completely unusable)
-  const usableFiles = results.filter(f => f.serverAvailable || f.thumbnail)
-  
-  // Update localStorage with availability status
-  localStorage.setItem('recentTranslations', JSON.stringify(usableFiles))
-  
-  return usableFiles
-}
-
-// Constants for localStorage management
-const MAX_RECENT_FILES = 5
-const THUMBNAIL_WIDTH = 160 // px - small enough to save space
-const THUMBNAIL_QUALITY = 0.7 // JPEG quality (0-1)
-const MAX_STORAGE_SIZE = 4 * 1024 * 1024 // 4MB safety limit for localStorage
-
-// Capture PDF first page as base64 thumbnail
-const capturePdfThumbnail = async (pdfUrl) => {
-  try {
-    // Dynamically import pdfjs-dist (used by vue-pdf-embed)
-    const pdfjsLib = await import('pdfjs-dist')
-    
-    // Set worker source
-    pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`
-    
-    // Fetch PDF and get first page
-    const loadingTask = pdfjsLib.getDocument(pdfUrl)
-    const pdf = await loadingTask.promise
-    const page = await pdf.getPage(1)
-    
-    // Calculate scale to fit thumbnail width
-    const viewport = page.getViewport({ scale: 1 })
-    const scale = THUMBNAIL_WIDTH / viewport.width
-    const scaledViewport = page.getViewport({ scale })
-    
-    // Create canvas and render
-    const canvas = document.createElement('canvas')
-    canvas.width = scaledViewport.width
-    canvas.height = scaledViewport.height
-    const context = canvas.getContext('2d')
-    
-    await page.render({
-      canvasContext: context,
-      viewport: scaledViewport
-    }).promise
-    
-    // Convert to compressed JPEG base64
-    const thumbnail = canvas.toDataURL('image/jpeg', THUMBNAIL_QUALITY)
-    
-    // Cleanup
-    pdf.destroy()
-    
-    return thumbnail
-  } catch (error) {
-    console.error('Failed to capture PDF thumbnail:', error)
-    return null
-  }
-}
-
-// Check localStorage usage
-const getStorageSize = () => {
-  let total = 0
-  for (const key in localStorage) {
-    if (localStorage.hasOwnProperty(key)) {
-      total += localStorage[key].length * 2 // UTF-16 = 2 bytes per char
-    }
-  }
-  return total
-}
-
-// Compress stored data if exceeding limit
-const compressRecentFilesIfNeeded = (files) => {
-  let data = JSON.stringify(files)
-  
-  // If data is too large, remove thumbnails from oldest files first
-  while (data.length * 2 > MAX_STORAGE_SIZE && files.length > 0) {
-    // Find file with thumbnail and remove it (starting from oldest)
-    for (let i = files.length - 1; i >= 0; i--) {
-      if (files[i].thumbnail) {
-        console.log(`Removing thumbnail from ${files[i].filename} to save space`)
-        files[i].thumbnail = null
-        data = JSON.stringify(files)
-        break
-      }
-    }
-    // If no thumbnails left and still too big, remove oldest file
-    if (data.length * 2 > MAX_STORAGE_SIZE) {
-      files.pop()
-      data = JSON.stringify(files)
-    }
-  }
-  
-  return files
-}
-
-const saveToRecentFiles = async (taskIdValue, filename, langFrom, langTo, hasMonoPdf, hasDualPdf) => {
-  const recent = loadRecentFiles()
-  // Remove existing entry with same taskId if exists
-  const filtered = recent.filter(f => f.taskId !== taskIdValue)
-  
-  // Capture thumbnail from the mono PDF
-  let thumbnail = null
-  if (hasMonoPdf) {
-    thumbnail = await capturePdfThumbnail(`/v1/translate/${taskIdValue}/download/mono`)
-  }
-  
-  // Add new entry at the beginning
-  filtered.unshift({
-    taskId: taskIdValue,
-    filename,
-    timestamp: Date.now(),
-    langFrom,
-    langTo,
-    hasMonoPdf,
-    hasDualPdf,
-    thumbnail, // base64 preview image
-    serverAvailable: true // Track if files are still on server
-  })
-  
-  // Keep only the last MAX_RECENT_FILES
-  let trimmed = filtered.slice(0, MAX_RECENT_FILES)
-  
-  // Compress if needed to stay within storage limits
-  trimmed = compressRecentFilesIfNeeded(trimmed)
-  
-  try {
-    localStorage.setItem('recentTranslations', JSON.stringify(trimmed))
-    recentFiles.value = trimmed
-  } catch (e) {
-    console.error('Failed to save recent files to localStorage:', e)
-    // If quota exceeded, try removing thumbnails
-    trimmed.forEach(f => f.thumbnail = null)
-    try {
-      localStorage.setItem('recentTranslations', JSON.stringify(trimmed))
-      recentFiles.value = trimmed
-    } catch (e2) {
-      console.error('Still failed after removing thumbnails:', e2)
-    }
-  }
+const clearPendingFiles = () => {
+  pendingFiles.value = []
+  selectedFile.value = null
 }
 
 const clearRecentFiles = () => {
-  localStorage.removeItem('recentTranslations')
   recentFiles.value = []
+  saveRecentFiles()
 }
 
-// Download functions for recent files (by taskId)
-const handleRecentDownload = async (downloadFn, recentTaskId) => {
+const changeLanguage = (langCode) => {
+  locale.value = langCode
+  localStorage.setItem(STORAGE_KEYS.locale, langCode)
+}
+
+const applyConfigDefaults = () => {
+  const defaults = config.value?.defaults || {}
+  const services = config.value?.services || []
+  if (!translationParams.service) {
+    translationParams.service = defaults.service || services[0]?.value || ''
+  }
+  if (!translationParams.lang_in) {
+    translationParams.lang_in = defaults.lang_in || 'en'
+  }
+  if (!translationParams.lang_out) {
+    translationParams.lang_out = defaults.lang_out || 'zh'
+  }
+
+  const validServices = new Set(services.map(item => item.value))
+  if (translationParams.service && !validServices.has(translationParams.service)) {
+    translationParams.service = defaults.service || services[0]?.value || ''
+    translationParams.service_credentials = {}
+  }
+}
+
+const fetchConfig = async () => {
+  const [configResponse, versionResponse] = await Promise.all([
+    api.getConfig(),
+    api.getVersion().catch(() => ({ data: {} })),
+  ])
+  config.value = configResponse.data
+  versionInfo.value = versionResponse.data
+  applyConfigDefaults()
+}
+
+const fetchHealthInfo = async () => {
   try {
-    const response = await downloadFn(recentTaskId)
-    const blob = new Blob([response.data], { type: response.headers['content-type'] })
-    const url = window.URL.createObjectURL(blob)
-    const link = document.createElement('a')
-    link.href = url
-    
-    let filename = 'download.pdf'
-    const disposition = response.headers['content-disposition']
-    if (disposition) {
-      const utf8Match = disposition.match(/filename\*=UTF-8''([^;]+)/)
-      if (utf8Match) {
-        filename = decodeURIComponent(utf8Match[1])
-      } else {
-        const filenameMatch = disposition.match(/filename="?([^"]+)"?/)
-        if (filenameMatch) {
-          filename = filenameMatch[1]
-        }
+    const response = await api.getHealth()
+    healthInfo.value = response.data
+    if (!isTranslating.value) {
+      serviceStatus.value = 'ready'
+    }
+  } catch (error) {
+    console.error('Failed to fetch health info:', error)
+    healthInfo.value = {
+      active_jobs: 0,
+      queued_jobs: 0,
+      total_jobs: 0,
+    }
+    if (!isTranslating.value) {
+      serviceStatus.value = 'error'
+    }
+  }
+}
+
+const getSelectedService = () => {
+  const service = config.value?.services?.find(item => item.value === translationParams.service)
+  if (!service) {
+    throw new Error(t('errors.serviceRequired'))
+  }
+  return service
+}
+
+const buildSourcePayload = () => {
+  const service = getSelectedService()
+  const source = {
+    mode: service.source_mode,
+    channel_id: service.channel_id,
+  }
+
+  if (service.source_mode === 'custom') {
+    const credentials = {}
+    for (const field of service.fields || []) {
+      const value = translationParams.service_credentials?.[field.name]
+      if (field.required && !value) {
+        throw new Error(t('errors.missingServiceField', { field: field.label }))
+      }
+      if (value) {
+        credentials[field.name] = value
       }
     }
-    
-    link.setAttribute('download', filename)
-    document.body.appendChild(link)
-    link.click()
-    
-    setTimeout(() => {
-      document.body.removeChild(link)
-      window.URL.revokeObjectURL(url)
-    }, 100)
-  } catch (error) {
-    console.error('Download failed:', error)
-    // If file not found (404), remove from recent files
-    if (error.response && error.response.status === 404) {
-      const recent = recentFiles.value.filter(f => f.taskId !== recentTaskId)
-      localStorage.setItem('recentTranslations', JSON.stringify(recent))
-      recentFiles.value = recent
+    source.credentials = credentials
+  }
+
+  return source
+}
+
+const buildOptionsPayload = () => {
+  const options = {
+    lang_in: translationParams.lang_in,
+    lang_out: translationParams.lang_out,
+    no_dual: translationParams.no_dual,
+    no_mono: translationParams.no_mono,
+    pages: translationParams.pages || undefined,
+    qps: translationParams.qps,
+    pool_max_workers: translationParams.pool_max_workers,
+    term_pool_max_workers: translationParams.term_pool_max_workers,
+    watermark_output_mode: translationParams.watermark_output_mode || undefined,
+    max_pages_per_part: translationParams.max_pages_per_part,
+    ignore_cache: translationParams.ignore_cache,
+    custom_system_prompt: translationParams.custom_system_prompt || undefined,
+    skip_scanned_detection: translationParams.skip_scanned_detection,
+    ocr_workaround: translationParams.ocr_workaround,
+    auto_enable_ocr_workaround: translationParams.auto_enable_ocr_workaround,
+    split_short_lines: translationParams.split_short_lines,
+    short_line_split_factor: translationParams.split_short_lines ? translationParams.short_line_split_factor : undefined,
+    auto_extract_glossary: translationParams.auto_extract_glossary,
+    save_auto_extracted_glossary: translationParams.save_auto_extracted_glossary,
+    only_include_translated_page: translationParams.only_include_translated_page,
+    skip_clean: translationParams.skip_clean,
+    enhance_compatibility: translationParams.enhance_compatibility,
+    disable_rich_text_translate: translationParams.disable_rich_text_translate,
+    primary_font_family: translationParams.primary_font_family || undefined,
+  }
+
+  return Object.fromEntries(
+    Object.entries(options).filter(([, value]) => value !== undefined && value !== '')
+  )
+}
+
+const setResultUrls = (jobId, files) => {
+  const fileTypes = new Set((files || []).map(item => item.type))
+  monoPdfUrl.value = fileTypes.has('mono') ? `/v1/translate/${jobId}/download/mono` : null
+  dualPdfUrl.value = fileTypes.has('dual') ? `/v1/translate/${jobId}/download/dual` : null
+}
+
+const pushRecentFile = (jobId, fileName, files) => {
+  const entry = {
+    taskId: jobId,
+    filename: fileName,
+    langIn: translationParams.lang_in,
+    langOut: translationParams.lang_out,
+    hasMonoPdf: files.some(item => item.type === 'mono'),
+    hasDualPdf: files.some(item => item.type === 'dual'),
+    updatedAt: new Date().toISOString(),
+  }
+
+  recentFiles.value = [
+    entry,
+    ...recentFiles.value.filter(item => item.taskId !== jobId),
+  ].slice(0, 10)
+  saveRecentFiles()
+}
+
+const triggerDownload = (blob, fileName) => {
+  const url = window.URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = fileName
+  document.body.appendChild(link)
+  link.click()
+  link.remove()
+  window.URL.revokeObjectURL(url)
+}
+
+const downloadMono = async () => {
+  if (!taskId.value || !monoPdfUrl.value) {
+    return
+  }
+  const response = await api.downloadTaskMono(taskId.value)
+  triggerDownload(response.data, `${(selectedFile.value?.name || 'translated').replace(/\.pdf$/i, '')}.mono.pdf`)
+}
+
+const downloadDual = async () => {
+  if (!taskId.value || !dualPdfUrl.value) {
+    return
+  }
+  const response = await api.downloadTaskDual(taskId.value)
+  triggerDownload(response.data, `${(selectedFile.value?.name || 'translated').replace(/\.pdf$/i, '')}.dual.pdf`)
+}
+
+const downloadRecentMono = async (recentTaskId, filename) => {
+  const response = await api.downloadTaskMono(recentTaskId)
+  triggerDownload(response.data, `${filename.replace(/\.pdf$/i, '')}.mono.pdf`)
+}
+
+const downloadRecentDual = async (recentTaskId, filename) => {
+  const response = await api.downloadTaskDual(recentTaskId)
+  triggerDownload(response.data, `${filename.replace(/\.pdf$/i, '')}.dual.pdf`)
+}
+
+const updateStatusState = (data, task = null) => {
+  const percent = data.progress?.total
+    ? Math.round((data.progress.current / data.progress.total) * 100)
+    : data.progress?.percent ?? 0
+  const status = data.status
+
+  if (task) {
+    task.status = status
+    task.progress = percent
+    task.error = data.error || ''
+    overallProgress.value = percent
+    currentStage.value = data.current_stage || null
+    stages.value = data.stages || []
+  } else {
+    taskStatus.value = status
+    overallProgress.value = percent
+    currentStage.value = data.current_stage || null
+    stages.value = data.stages || []
+    errorMessage.value = data.error || ''
+  }
+
+  return { percent, status }
+}
+
+const finalizeSingleTask = (data) => {
+  isTranslating.value = false
+  serviceStatus.value = 'ready'
+  taskStatus.value = data.status
+  overallProgress.value = data.status === 'completed' ? 100 : overallProgress.value
+  setResultUrls(taskId.value, data.files || [])
+  if (data.status === 'completed') {
+    pushRecentFile(taskId.value, selectedFile.value?.name || 'translated.pdf', data.files || [])
+  }
+}
+
+const processNextTask = async () => {
+  if (currentBatchIndex.value >= batchQueue.value.length) {
+    isTranslating.value = false
+    serviceStatus.value = 'ready'
+    overallProgress.value = null
+    currentStage.value = null
+    stages.value = []
+    return
+  }
+
+  const task = batchQueue.value[currentBatchIndex.value]
+  task.status = 'running'
+  selectedFile.value = task.file
+  overallProgress.value = 0
+  stages.value = []
+  currentStage.value = null
+  await startTranslation(task)
+}
+
+const pollStatus = async (task = null) => {
+  const currentTaskId = task ? task.taskId : taskId.value
+  if (!currentTaskId) {
+    return
+  }
+
+  try {
+    const response = await api.getStatus(currentTaskId)
+    const { status } = updateStatusState(response.data, task)
+
+    if (task) {
+      if (status === 'completed') {
+        task.monoPdfUrl = response.data.files.some(item => item.type === 'mono') ? `/v1/translate/${currentTaskId}/download/mono` : null
+        task.dualPdfUrl = response.data.files.some(item => item.type === 'dual') ? `/v1/translate/${currentTaskId}/download/dual` : null
+        pushRecentFile(currentTaskId, task.file.name, response.data.files || [])
+        currentBatchIndex.value += 1
+        setTimeout(processNextTask, 300)
+        return
+      }
+
+      if (status === 'failed' || status === 'cancelled') {
+        currentBatchIndex.value += 1
+        setTimeout(processNextTask, 300)
+        return
+      }
+    } else {
+      overallProgress.value = response.data.progress?.percent ?? response.data.progress?.current ?? overallProgress.value
+      currentStage.value = response.data.current_stage || null
+      stages.value = response.data.stages || []
+      taskStatus.value = status
+
+      if (status === 'completed' || status === 'failed' || status === 'cancelled') {
+        finalizeSingleTask(response.data)
+        return
+      }
     }
+
+    setTimeout(() => pollStatus(task), 1000)
+  } catch (error) {
+    console.error('Status poll failed:', error)
+    if (task) {
+      task.status = 'failed'
+      task.error = error.message
+      currentBatchIndex.value += 1
+      setTimeout(processNextTask, 300)
+      return
+    }
+
+    isTranslating.value = false
+    serviceStatus.value = 'error'
+    taskStatus.value = 'failed'
+    errorMessage.value = error.message
   }
 }
 
-const downloadRecentMono = async (recentTaskId) => {
-  await handleRecentDownload(api.downloadTaskMono, recentTaskId)
-}
+const startTranslation = async (task = null) => {
+  try {
+    const fileToUpload = task ? task.file : selectedFile.value
+    if (!fileToUpload) {
+      throw new Error(t('errors.fileRequired'))
+    }
 
-const downloadRecentDual = async (recentTaskId) => {
-  await handleRecentDownload(api.downloadTaskDual, recentTaskId)
-}
+    const response = await api.translate({
+      file: fileToUpload,
+      options: JSON.stringify(buildOptionsPayload()),
+      source: JSON.stringify(buildSourcePayload()),
+    })
 
-// Load recent files on component initialization
-// First load from localStorage for immediate display
-recentFiles.value = loadRecentFiles()
+    if (task) {
+      task.taskId = response.data.id
+      task.status = response.data.status
+      pollStatus(task)
+      return
+    }
 
-// Then validate asynchronously and remove missing files
-const initRecentFiles = async () => {
-  const stored = loadRecentFiles()
-  if (stored.length > 0) {
-    const validFiles = await validateRecentFiles(stored)
-    recentFiles.value = validFiles
+    taskId.value = response.data.id
+    taskStatus.value = response.data.status
+    pollStatus()
+  } catch (error) {
+    console.error('Translation failed:', error)
+    if (task) {
+      task.status = 'failed'
+      task.error = error.message
+      currentBatchIndex.value += 1
+      setTimeout(processNextTask, 300)
+      return
+    }
+
+    isTranslating.value = false
+    taskStatus.value = 'failed'
+    serviceStatus.value = 'error'
+    errorMessage.value = error.message
   }
 }
-initRecentFiles()
+
+const startPendingTranslations = async () => {
+  if (!canStartTranslation.value) {
+    return
+  }
+
+  resetTranslation()
+  await nextTick()
+
+  if (pendingFiles.value.length > 1) {
+    batchQueue.value = pendingFiles.value.map((file, index) => ({
+      id: `${Date.now()}-${index}`,
+      file,
+      taskId: null,
+      status: 'pending',
+      progress: 0,
+      error: '',
+      monoPdfUrl: null,
+      dualPdfUrl: null,
+    }))
+    isTranslating.value = true
+    serviceStatus.value = 'busy'
+    currentBatchIndex.value = 0
+    await processNextTask()
+    return
+  }
+
+  selectedFile.value = pendingFiles.value[0]
+  isTranslating.value = true
+  serviceStatus.value = 'busy'
+  await startTranslation()
+}
+
+const stopTranslation = async () => {
+  if (!taskId.value) {
+    return
+  }
+  await api.cancelTranslation(taskId.value)
+  taskStatus.value = 'cancelling'
+}
+
+const retryBatch = async () => {
+  const retryTargets = batchQueue.value.filter(task => ['failed', 'cancelled'].includes(task.status))
+  if (!retryTargets.length) {
+    return
+  }
+  for (const task of retryTargets) {
+    task.status = 'pending'
+    task.progress = 0
+    task.error = ''
+    task.taskId = null
+  }
+  isTranslating.value = true
+  serviceStatus.value = 'busy'
+  currentBatchIndex.value = batchQueue.value.findIndex(task => task.status === 'pending')
+  await processNextTask()
+}
+
+const handleFilesSelected = (files) => {
+  pendingFiles.value = Array.isArray(files) ? files : [files]
+  selectedFile.value = pendingFiles.value[0] || null
+}
+
+const statusTone = computed(() => {
+  if (serviceStatus.value === 'error') return 'destructive'
+  if (serviceStatus.value === 'busy') return 'secondary'
+  return 'outline'
+})
+
+onMounted(async () => {
+  const savedLocale = localStorage.getItem(STORAGE_KEYS.locale)
+  if (savedLocale) {
+    locale.value = savedLocale
+  }
+
+  recentFiles.value = loadRecentFiles()
+
+  try {
+    await fetchConfig()
+    serviceStatus.value = 'ready'
+  } catch (error) {
+    console.error('Failed to load config:', error)
+    serviceStatus.value = 'error'
+    errorMessage.value = error.message
+  }
+
+  await fetchHealthInfo()
+  healthPollInterval.value = setInterval(fetchHealthInfo, 10000)
+})
+
+onUnmounted(() => {
+  if (healthPollInterval.value) {
+    clearInterval(healthPollInterval.value)
+  }
+  if (selectedFilePreviewUrl.value) {
+    URL.revokeObjectURL(selectedFilePreviewUrl.value)
+  }
+})
 </script>
 
 <template>
-  <div 
-    class="min-h-screen bg-background font-sans antialiased overflow-x-hidden transition-opacity duration-200 flex flex-col"
-    :class="{ 'opacity-0': isLanguageSwitching, 'opacity-100': !isLanguageSwitching }"
-  >
-    <Header 
-      :show-settings="showSettings" 
-      :is-wco="isWco" 
-      :dev-mode="devMode"
+  <div class="min-h-screen bg-background text-foreground">
+    <Header
+      :show-settings="showSettings"
       :is-translating="isTranslating"
-      @toggle-settings="showSettings = !showSettings" 
-      @change-language="handleLanguageChange"
-      @toggle-dev-mode="toggleDevMode"
-      @go-home="handleGoHome"
+      @toggle-settings="showSettings = !showSettings"
+      @change-language="changeLanguage"
+      @go-home="showSettings = false"
     />
-    
-    <main class="container py-10 mx-auto px-6 flex-1" :class="{ 'my-6': isWco }">
+
+    <main class="px-6 py-8">
       <Transition name="fade" mode="out-in">
-        <div
-          v-if="!showSettings"
-          key="main"
-          class="max-w-4xl mx-auto space-y-8"
-          :class="{ 'home-text-unselectable': isOnIndex }"
-        >
-          <div class="space-y-2">
-            <!-- Batch Progress Card -->
-            <BatchProgressCard 
-              v-if="isBatchMode"
-              :tasks="batchQueue"
-              :current-index="currentBatchIndex"
-              :completed-count="completedBatchCount"
-              :total-count="batchQueue.length"
-              :is-batch-complete="isBatchComplete"
-              @reset="resetBatch"
-              @retry="retryBatch"
-            />
-
-            <!-- Translation Options - Hidden when translation starts or is in progress -->
-            <Card v-if="!isTranslating && overallProgress === null && !isTranslationComplete && taskStatus !== 'failed' && !isBatchMode" class="relative z-20">
-              <CardHeader class="flex flex-row items-start justify-between pb-2 space-y-0">
-
-                <div class="space-y-1.5 z-100">
-                  <CardTitle>{{ t('translation.options') }}</CardTitle>
-                  <CardDescription>{{ t('translation.optionsDescription') }}</CardDescription>
-                </div>
-                <div class="flex gap-1 bg-muted/30 p-1 rounded-lg transition-colors duration-300">
-                  <Button 
-                    variant="ghost" 
-                    size="icon" 
-                    @click="translationParams.source = 'File'" 
-                    class="transition-all duration-300 rounded-md hover:bg-background/50"
-                    :class="translationParams.source === 'File' 
-                      ? 'bg-background shadow-sm text-primary' 
-                      : 'text-muted-foreground hover:text-primary'"
-                    :title="t('translation.file')"
-                  >
-                    <FileText 
-                      class="w-4 h-4 transition-colors duration-300" 
-                    />
-                  </Button>
-                  <Button 
-                    variant="ghost" 
-                    size="icon" 
-                    @click="translationParams.source = 'Link'" 
-                    class="transition-all duration-300 rounded-md hover:bg-background/50"
-                    :class="translationParams.source === 'Link' 
-                      ? 'bg-background shadow-sm text-primary' 
-                      : 'text-muted-foreground hover:text-primary'"
-                    :title="t('translation.link')"
-                  >
-                    <LinkIcon 
-                      class="w-4 h-4 transition-colors duration-300" 
-                    />
-                  </Button>
-                </div>
-              </CardHeader>
-              <CardContent>
-                <TranslationOptions
-                  :model-value="translationParams"
-                  @update:model-value="v => Object.assign(translationParams, v)"
-                  :config="config"
-                  @file-selected="handleFileSelected" 
-                  @files-selected="handleFileSelected"
-                  @open-service-settings="handleOpenServiceSettings" 
-                />
-              </CardContent>
-            </Card>
-
-            <!-- Service Changer Card -->
-            <ServiceChangerCard
-              v-if="!isTranslating && overallProgress === null && !isTranslationComplete && taskStatus !== 'failed' && !isBatchMode"
-              :model-value="translationParams"
-              @update:model-value="v => Object.assign(translationParams, v)"
-              :config="config"
-            />
-          </div>
-          
-          <!-- Progress Box - Show during translation or failure -->
-          <Card v-if="isTranslating || (overallProgress !== null && !isTranslationComplete) || taskStatus === 'failed'">
-            <CardHeader>
-              <CardTitle class="flex items-center justify-between">
-                <div class="flex items-center gap-2">
-                  <Loader2 v-if="isTranslating" class="h-5 w-5 animate-spin" />
-                  {{ overallProgress === null || overallProgress === 0 
-                    ? t('translation.starting') 
-                    : `${t('translation.processing') || 'Processing'} (${overallProgress.toFixed(1)}%)` }}
-                </div>
-                <TooltipProvider v-if="isTranslating">
-                  <Tooltip>
-                    <TooltipTrigger as-child>
-                      <Button 
-                        variant="destructive" 
-                        size="sm" 
-                        class="h-8 text-white hover:bg-destructive/90"
-                        @click="stopTranslation"
-                      >
-                        <Square class="w-4 h-4 mr-2" fill="currentColor" />
-                        {{ t('translation.cancel') || 'Cancel' }}
-                      </Button>
-                    </TooltipTrigger>
-                    <TooltipContent>
-                      <p>{{ t('shortcuts.stop') }} (⌘/Ctrl + N / R)</p>
-                    </TooltipContent>
-                  </Tooltip>
-                </TooltipProvider>
-              </CardTitle>
+        <div v-if="!showSettings" key="home" class="mx-auto max-w-5xl space-y-8">
+          <Card class="border-dashed">
+            <CardHeader class="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+              <div class="space-y-2">
+                <CardTitle class="text-2xl">{{ t('translation.options') }}</CardTitle>
+                <CardDescription>{{ t('translation.optionsDescription') }}</CardDescription>
+              </div>
+              <div class="flex items-center gap-3">
+                <Badge :variant="statusTone" class="gap-2 px-3 py-1">
+                  <Server class="h-3.5 w-3.5" />
+                  {{ t(`service.status.${serviceStatus}`) }}
+                </Badge>
+                <Button variant="outline" size="sm" class="gap-2" @click="showSettings = true">
+                  <Settings2 class="h-4 w-4" />
+                  {{ t('settings.title') }}
+                </Button>
+              </div>
             </CardHeader>
-            <CardContent class="space-y-4">
-              <div v-if="taskStatus === 'failed'" class="flex flex-col sm:flex-row items-center gap-4 p-4 border border-destructive/50 rounded-lg bg-destructive/10 text-destructive transition-colors duration-300">
-                 <div class="flex-1 font-medium flex items-center gap-2">
-                   <AlertCircle class="h-5 w-5" />
-                   {{ t('translation.failed') || 'Translation Failed' }}
-                 </div>
-                 <div class="flex gap-2 w-full sm:w-auto">
-                    <Button variant="default" size="sm" @click="startTranslation" class="flex-1 sm:flex-none">
-                      <RefreshCw class="w-4 h-4 mr-2" />
-                      {{ t('translation.retry') || 'Retry' }}
-                    </Button>
-                    <TooltipProvider>
-                      <Tooltip>
-                        <TooltipTrigger as-child>
-                          <Button variant="outline" size="sm" @click="resetTranslation" class="flex-1 sm:flex-none bg-background hover:bg-accent text-foreground border-input">
-                            {{ t('translation.startNew') || 'Start New' }}
-                          </Button>
-                        </TooltipTrigger>
-                        <TooltipContent>
-                          <p>{{ t('shortcuts.new') }} (⌘/Ctrl + N / R)</p>
-                        </TooltipContent>
-                      </Tooltip>
-                    </TooltipProvider>
-                 </div>
-              </div>
+            <CardContent class="space-y-6">
+              <TranslationOptions
+                :model-value="translationParams"
+                :config="config"
+                @update:model-value="(value) => Object.assign(translationParams, value)"
+                @file-selected="handleFilesSelected"
+                @files-selected="handleFilesSelected"
+              />
 
-              <!-- Progress bar - commented out for simplified UI -->
-              <!-- <div v-if="taskStatus !== 'failed'" class="space-y-2">
-                  <Progress :value="overallProgress !== null ? overallProgress : 0" class="w-full" />
-              </div> -->
-              
-              <!-- Stages List -->
-              <div v-if="stages.length > 0 && taskStatus !== 'failed'" class="mt-4 h-9 overflow-hidden relative">
-                <div 
-                  class="transition-transform duration-500 ease-in-out absolute h-full top-0 left-0 flex gap-2"
-                  :style="{ transform: `translateX(-${activeStageIndex * 12.5}rem)` }"
-                >
-                  <div 
-                    v-for="(stage, index) in stages" 
-                    :key="index" 
-                    class="flex items-center gap-2 text-sm px-3 rounded-md transition-colors w-48 flex-shrink-0 border"
-                    :class="{
-                      'bg-green-100 border-green-200 text-green-700 dark:bg-green-900/20 dark:border-green-800 dark:text-green-400': stage.status === 'completed',
-                      'bg-background border-primary text-foreground ring-1 ring-primary/20': stage.status === 'active',
-                      'bg-muted/50 border-transparent text-muted-foreground': stage.status === 'pending'
-                    }"
-                  >
-                     <div class="flex-shrink-0 w-4 h-4 flex items-center justify-center">
-                       <Check v-if="stage.status === 'completed'" class="h-3.5 w-3.5" />
-                       <Loader2 v-else-if="stage.status === 'active'" class="h-3.5 w-3.5 animate-spin text-primary" />
-                       <div v-else class="h-1.5 w-1.5 rounded-full bg-muted-foreground/30"></div>
-                     </div>
-                     <span class="truncate font-medium">{{ stage.name }}</span>
-                  </div>
+              <div class="flex flex-col gap-3 border-t pt-6 md:flex-row md:items-center md:justify-between">
+                <div class="text-sm text-muted-foreground">
+                  <span v-if="pendingFiles.length === 0">{{ t('translation.readyHint') }}</span>
+                  <span v-else>{{ t('translation.filesReady', { count: pendingFiles.length }) }}</span>
                 </div>
-              </div>
-
-              <!-- Original File Preview -->
-              <div v-if="selectedFilePreviewUrl && taskStatus !== 'failed'" class="space-y-2">
-                  <!-- <p class="text-sm text-muted-foreground">{{ t('translation.originalFilePreview') }}</p> -->
-                  <div class="border rounded-lg overflow-hidden p-4 pdf-preview-container">
-                      <VuePdfEmbed 
-                          :source="selectedFilePreviewUrl"
-                          class="w-full"
-                      />
-                  </div>
-              </div>
-
-              <div v-if="logs.length > 0" class="flex flex-col gap-2">
-                  <Button 
-                      variant="ghost" 
-                      size="sm" 
-                      class="w-fit h-auto p-1 text-xs text-muted-foreground"
-                      @click="isLogsExpanded = !isLogsExpanded"
-                  >
-                      <ChevronDown v-if="!isLogsExpanded" class="h-3 w-3 mr-1" />
-                      <ChevronUp v-else class="h-3 w-3 mr-1" />
-                      {{ isLogsExpanded ? 'Hide' : 'Show' }} Logs ({{ logs.length }})
+                <div class="flex gap-3">
+                  <Button variant="outline" @click="clearPendingFiles">
+                    {{ t('translation.clearSelection') }}
                   </Button>
-                  <div v-show="isLogsExpanded" class="p-4 rounded-md max-h-40 overflow-y-auto text-xs font-mono bg-muted/50">
-                      <div v-for="(log, index) in logs" :key="index">{{ log }}</div>
-                  </div>
+                  <Button :disabled="!canStartTranslation" class="gap-2" @click="startPendingTranslations">
+                    <FileText class="h-4 w-4" />
+                    {{ t('translation.startTranslation') }}
+                  </Button>
+                </div>
               </div>
             </CardContent>
           </Card>
-          
-          <!-- Translation Result - Show when translation is complete -->
-          <Card v-if="isTranslationComplete && !isBatchComplete">
+
+          <BatchProgressCard
+            v-if="isBatchMode"
+            :tasks="batchQueue"
+            :current-index="currentBatchIndex"
+            :completed-count="completedBatchCount"
+            :total-count="batchQueue.length"
+            :is-batch-complete="isBatchComplete"
+            @reset="resetTranslation"
+            @retry="retryBatch"
+          />
+
+          <Card v-if="isTranslating || hasTerminalError" class="overflow-hidden">
+            <CardHeader class="space-y-3">
+              <div class="flex items-center justify-between gap-4">
+                <div class="flex items-center gap-3">
+                  <Loader2 v-if="isTranslating" class="h-5 w-5 animate-spin" />
+                  <AlertCircle v-else-if="taskStatus === 'failed'" class="h-5 w-5 text-destructive" />
+                  <AlertCircle v-else class="h-5 w-5 text-amber-500" />
+                  <CardTitle>
+                    <span v-if="isTranslating">{{ t('translation.processing') }}</span>
+                    <span v-else-if="taskStatus === 'failed'">{{ t('translation.failed') }}</span>
+                    <span v-else>{{ t('translation.cancelled') }}</span>
+                  </CardTitle>
+                </div>
+                <Button v-if="isTranslating && !isBatchMode" variant="destructive" size="sm" @click="stopTranslation">
+                  {{ t('translation.cancel') }}
+                </Button>
+              </div>
+              <CardDescription>
+                {{ t('translation.progressSummary', { percent: overallProgress ?? 0, stage: currentStage || t('translation.preparing') }) }}
+              </CardDescription>
+            </CardHeader>
+            <CardContent class="space-y-5">
+              <div class="h-3 overflow-hidden rounded-full bg-muted">
+                <div class="h-full rounded-full bg-primary transition-all duration-300" :style="{ width: `${overallProgress ?? 0}%` }" />
+              </div>
+
+              <div v-if="stages.length" class="flex flex-wrap gap-2">
+                <div
+                  v-for="stage in stages"
+                  :key="stage.name"
+                  class="rounded-full border px-3 py-1 text-sm"
+                  :class="{
+                    'border-primary bg-primary/10 text-primary': stage.status === 'running',
+                    'border-emerald-500 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400': stage.status === 'completed',
+                    'border-border text-muted-foreground': stage.status === 'pending'
+                  }"
+                >
+                  {{ stage.name }}
+                </div>
+              </div>
+
+              <div v-if="selectedFilePreviewUrl && !isBatchMode" class="rounded-lg border p-4">
+                <VuePdfEmbed :source="selectedFilePreviewUrl" class="w-full" />
+              </div>
+
+              <div v-if="errorMessage" class="rounded-lg border border-destructive/40 bg-destructive/10 p-4 text-sm text-destructive">
+                {{ errorMessage }}
+              </div>
+
+              <div v-if="hasTerminalError" class="flex justify-end">
+                <Button variant="outline" class="gap-2" @click="resetTranslation">
+                  <RefreshCw class="h-4 w-4" />
+                  {{ t('translation.startNew') }}
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card v-if="isTranslationComplete && !isBatchMode">
             <CardHeader>
-              <CardTitle>{{ t('translation.result') }}</CardTitle>
+              <div class="flex items-center gap-3">
+                <CheckCircle2 class="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
+                <CardTitle>{{ t('translation.result') }}</CardTitle>
+              </div>
               <CardDescription>{{ t('translation.resultDescription') }}</CardDescription>
             </CardHeader>
             <CardContent class="space-y-6">
-              <!-- Download Buttons -->
-              <div class="flex flex-wrap gap-4">
-                <TooltipProvider v-if="monoPdfUrl">
-                  <Tooltip>
-                    <TooltipTrigger as-child>
-                      <Button 
-                        variant="default" 
-                        @click="downloadMono"
-                        class="flex items-center gap-2"
-                      >
-                        <Download class="h-4 w-4" />
-                        {{ t('translation.downloadMono') }}
-                      </Button>
-                    </TooltipTrigger>
-                    <TooltipContent>
-                      <p>{{ t('shortcuts.downloadMono') || 'Download Mono' }} (⌘/Ctrl + 1)</p>
-                    </TooltipContent>
-                  </Tooltip>
-                </TooltipProvider>
-                <TooltipProvider v-if="dualPdfUrl">
-                  <Tooltip>
-                    <TooltipTrigger as-child>
-                      <Button 
-                        variant="outline" 
-                        @click="downloadDual"
-                        class="flex items-center gap-2"
-                      >
-                        <Download class="h-4 w-4" />
-                        {{ t('translation.downloadDual') }}
-                      </Button>
-                    </TooltipTrigger>
-                    <TooltipContent>
-                      <p>{{ t('shortcuts.downloadDual') || 'Download Dual' }} (⌘/Ctrl + 2)</p>
-                    </TooltipContent>
-                  </Tooltip>
-                </TooltipProvider>
-                <!-- Fallback for old downloadUrl -->
-                <Button 
-                  v-if="downloadUrl && !monoPdfUrl && !dualPdfUrl" 
-                  variant="outline" 
-                  @click="downloadResult"
-                  class="flex items-center gap-2"
-                >
+              <div class="flex flex-wrap gap-3">
+                <Button v-if="monoPdfUrl" class="gap-2" @click="downloadMono">
                   <Download class="h-4 w-4" />
-                  {{ t('translation.download') }}
+                  {{ t('translation.downloadMono') }}
                 </Button>
-                
-                <TooltipProvider>
-                  <Tooltip>
-                    <TooltipTrigger as-child>
-                      <Button 
-                        variant="secondary" 
-                        @click="resetTranslation"
-                        class="flex items-center gap-2"
-                      >
-                        <RefreshCw class="h-4 w-4" />
-                        {{ t('translation.restart') || 'Start New Translation' }}
-                      </Button>
-                    </TooltipTrigger>
-                    <TooltipContent>
-                      <p>{{ t('shortcuts.new') }} (⌘/Ctrl + N / R)</p>
-                    </TooltipContent>
-                  </Tooltip>
-                </TooltipProvider>
+                <Button v-if="dualPdfUrl" variant="outline" class="gap-2" @click="downloadDual">
+                  <Download class="h-4 w-4" />
+                  {{ t('translation.downloadDual') }}
+                </Button>
+                <Button variant="secondary" class="gap-2" @click="resetTranslation">
+                  <RefreshCw class="h-4 w-4" />
+                  {{ t('translation.restart') }}
+                </Button>
               </div>
 
-              <!-- PDF Preview - Show first page of mono PDF -->
-              <div v-if="monoPdfUrl" class="space-y-4">
-                <div class="border rounded-lg overflow-hidden p-4 pdf-preview-container">
-                  <VuePdfEmbed 
-                    :source="monoPdfUrl"
-                    class="w-full"
-                  />
-                </div>
+              <div v-if="monoPdfUrl" class="rounded-lg border p-4">
+                <VuePdfEmbed :source="monoPdfUrl" class="w-full" />
               </div>
             </CardContent>
           </Card>
 
-          <!-- Recent Files Section -->
           <Card v-if="recentFiles.length > 0">
-            <CardHeader class="flex flex-row items-center justify-between pb-4 space-y-0">
-              <div class="space-y-1.5">
+            <CardHeader class="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+              <div class="space-y-1">
                 <CardTitle>{{ t('recentFiles.title') }}</CardTitle>
                 <CardDescription>{{ t('recentFiles.description') }}</CardDescription>
               </div>
-              <Button variant="ghost" size="sm" @click="clearRecentFiles" class="text-muted-foreground hover:text-destructive">
-                <Trash2 class="h-4 w-4 mr-2" />
+              <Button variant="ghost" size="sm" @click="clearRecentFiles">
                 {{ t('recentFiles.clear') }}
               </Button>
             </CardHeader>
             <CardContent>
-              <div class="flex flex-wrap justify-start gap-4">
-                <div 
-                  v-for="file in recentFiles" 
-                  :key="file.taskId" 
-                  class="recent-file-card flex flex-col items-center w-40 p-3 border rounded-lg transition-colors"
-                  :class="file.serverAvailable !== false ? 'bg-muted/30 hover:bg-muted/50' : 'bg-muted/10 opacity-75'"
-                >
-                  <!-- Preview thumbnail - use cached thumbnail or live PDF -->
-                  <div class="recent-preview-container w-full h-28 mb-2 border rounded overflow-hidden bg-background relative">
-                    <!-- Use cached thumbnail if available -->
-                    <img 
-                      v-if="file.thumbnail" 
-                      :src="file.thumbnail" 
-                      :alt="file.filename"
-                      class="w-full h-full object-cover object-top"
-                    />
-                    <!-- Fallback to live PDF if server available and no thumbnail -->
-                    <VuePdfEmbed 
-                      v-else-if="file.serverAvailable !== false"
-                      :source="`/v1/translate/${file.taskId}/download/mono`"
-                      class="w-full h-full object-cover"
-                    />
-                    <!-- Placeholder when no thumbnail and server unavailable -->
-                    <div 
-                      v-else 
-                      class="w-full h-full flex items-center justify-center text-muted-foreground"
-                    >
-                      <FileText class="h-8 w-8 opacity-30" />
-                    </div>
-                    <!-- Unavailable overlay badge -->
-                    <div 
-                      v-if="file.serverAvailable === false" 
-                      class="absolute bottom-1 right-1 px-1.5 py-0.5 text-[10px] font-medium rounded bg-muted/80 text-muted-foreground backdrop-blur-sm transition-colors duration-300"
-                    >
-                      {{ t('recentFiles.cached') }}
-                    </div>
+              <div class="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                <div v-for="file in recentFiles" :key="file.taskId" class="rounded-xl border p-4">
+                  <div class="space-y-1">
+                    <p class="truncate font-medium" :title="file.filename">{{ file.filename }}</p>
+                    <p class="text-sm text-muted-foreground">{{ file.langIn }} → {{ file.langOut }}</p>
                   </div>
-                  <!-- File info -->
-                  <p class="text-xs font-medium text-center truncate w-full mb-0.5" :title="file.filename">
-                    {{ file.filename }}
-                  </p>
-                  <p class="text-xs text-muted-foreground mb-2">
-                    {{ file.langFrom }} → {{ file.langTo }}
-                  </p>
-                  <!-- Download buttons - disabled when server unavailable -->
-                  <div class="flex gap-1.5 w-full">
-                    <Button 
-                      v-if="file.hasMonoPdf" 
-                      size="sm" 
-                      variant="default"
-                      class="flex-1 text-xs h-7 px-2"
-                      :disabled="file.serverAvailable === false"
-                      @click="downloadRecentMono(file.taskId)"
-                    >
-                      <Download class="h-3 w-3 mr-1" />
+                  <div class="mt-4 flex gap-2">
+                    <Button v-if="file.hasMonoPdf" size="sm" class="gap-2" @click="downloadRecentMono(file.taskId, file.filename)">
+                      <Download class="h-3.5 w-3.5" />
                       {{ t('recentFiles.mono') }}
                     </Button>
-                    <Button 
-                      v-if="file.hasDualPdf" 
-                      size="sm" 
-                      variant="outline"
-                      class="flex-1 text-xs h-7 px-2"
-                      :disabled="file.serverAvailable === false"
-                      @click="downloadRecentDual(file.taskId)"
-                    >
-                      <Download class="h-3 w-3 mr-1" />
+                    <Button v-if="file.hasDualPdf" size="sm" variant="outline" class="gap-2" @click="downloadRecentDual(file.taskId, file.filename)">
+                      <Download class="h-3.5 w-3.5" />
                       {{ t('recentFiles.dual') }}
                     </Button>
                   </div>
@@ -1721,71 +829,67 @@ initRecentFiles()
             </CardContent>
           </Card>
 
-          <!-- Dev Mode Stats Card -->
-          <DevStatsCard 
-            v-if="devMode" 
-            :health="healthInfo" 
-            :config="config"
-            class="mt-8"
-          />
+          <Card>
+            <CardHeader>
+              <CardTitle>{{ t('service.summaryTitle') }}</CardTitle>
+              <CardDescription>{{ t('service.summaryDescription') }}</CardDescription>
+            </CardHeader>
+            <CardContent class="grid gap-4 md:grid-cols-3">
+              <div class="rounded-xl border p-4">
+                <p class="text-sm text-muted-foreground">{{ t('service.activeTasks') }}</p>
+                <p class="mt-2 text-2xl font-semibold">{{ healthInfo.active_jobs || 0 }}</p>
+              </div>
+              <div class="rounded-xl border p-4">
+                <p class="text-sm text-muted-foreground">{{ t('service.pendingTasks') }}</p>
+                <p class="mt-2 text-2xl font-semibold">{{ healthInfo.queued_jobs || 0 }}</p>
+              </div>
+              <div class="rounded-xl border p-4">
+                <p class="text-sm text-muted-foreground">{{ t('service.totalTasks') }}</p>
+                <p class="mt-2 text-2xl font-semibold">{{ healthInfo.total_jobs || 0 }}</p>
+              </div>
+            </CardContent>
+          </Card>
         </div>
 
-        <div v-else key="settings" class="max-w-3xl mx-auto space-y-6">
-          <Card class="h-full">
-            <CardHeader class="relative">
-              <CardTitle class="flex items-center gap-2">
-                {{ t('settings.title') }}
-                <Transition name="fade">
-                  <Check v-if="isSaved" class="h-4 w-4 text-green-500" />
-                </Transition>
-                <span v-if="devMode" class="ml-2 px-2 py-0.5 text-xs font-medium rounded-full bg-amber-500/20 text-amber-600 dark:text-amber-400 flex items-center gap-1">
-                  <Zap class="h-3 w-3" />
-                  {{ t('devMode.badge') }}
-                </span>
-              </CardTitle>
-              <Button
-                v-if="isPWA"
-                variant="ghost"
-                size="icon"
-                class="absolute top-6 right-6"
-                @click="handleGoHome"
-              >
-                <X class="h-4 w-4" />
-                <span class="sr-only">{{ t('common.close') }}</span>
-              </Button>
+        <div v-else key="settings" class="mx-auto max-w-3xl space-y-6">
+          <Card>
+            <CardHeader>
+              <CardTitle>{{ t('settings.title') }}</CardTitle>
+              <CardDescription>{{ t('settings.description') }}</CardDescription>
             </CardHeader>
             <CardContent>
-              <ApplicationSettings :model-value="translationParams" @update:model-value="v => Object.assign(translationParams, v)" :config="config" :version-info="versionInfo" :open-accordion="openAccordionItem" />
+              <ApplicationSettings :model-value="translationParams" @update:model-value="(value) => Object.assign(translationParams, value)" />
             </CardContent>
           </Card>
 
-          <!-- Dev Mode Advanced Settings -->
-          <DevSettings
-            v-if="devMode && config?.all_params"
-            :model-value="translationParams"
-            @update:model-value="v => Object.assign(translationParams, v)"
-            :config="config"
-          />
+          <Card v-if="versionInfo">
+            <CardHeader>
+              <CardTitle>{{ t('settings.runtimeInfo') }}</CardTitle>
+            </CardHeader>
+            <CardContent class="grid gap-3 text-sm md:grid-cols-2">
+              <div class="rounded-lg border p-3">
+                <p class="text-muted-foreground">{{ t('settings.backendRuntime') }}</p>
+                <p class="mt-1 font-medium">{{ versionInfo.backend || 'BabelDOC' }}</p>
+              </div>
+              <div class="rounded-lg border p-3">
+                <p class="text-muted-foreground">{{ t('settings.babeldocVersion') }}</p>
+                <p class="mt-1 font-medium">{{ versionInfo.babeldoc_version || 'unknown' }}</p>
+              </div>
+            </CardContent>
+          </Card>
         </div>
       </Transition>
     </main>
-
-    <ProjectInfo :status="serviceStatus" :health="healthInfo" :connection-attempts="connectionAttempts" />
   </div>
 </template>
 
 <style scoped>
-/* Dark mode: darken the PDF content only */
-:global(.dark) .pdf-preview-container :deep(.vue-pdf-embed) {
-  filter: brightness(0.7);
+:global(.dark) :deep(.vue-pdf-embed) {
+  filter: brightness(0.78);
 }
 
-/* Hide all PDF pages except the first one in the preview */
-.pdf-preview-container :deep(.vue-pdf-embed > div:not(:first-child)) {
-  display: none;
-}
-
-.pdf-preview-container :deep(.vue-pdf-embed canvas:not(:first-of-type)) {
+:deep(.vue-pdf-embed > div:not(:first-child)),
+:deep(.vue-pdf-embed canvas:not(:first-of-type)) {
   display: none;
 }
 
@@ -1797,49 +901,5 @@ initRecentFiles()
 .fade-enter-from,
 .fade-leave-to {
   opacity: 0;
-}
-
-/* Recent Files Preview Styles */
-.recent-preview-container :deep(.vue-pdf-embed) {
-  width: 100%;
-  height: 100%;
-}
-
-.recent-preview-container :deep(.vue-pdf-embed > div:not(:first-child)) {
-  display: none;
-}
-
-.recent-preview-container :deep(.vue-pdf-embed canvas:not(:first-of-type)) {
-  display: none;
-}
-
-.recent-preview-container :deep(.vue-pdf-embed canvas) {
-  width: 100% !important;
-  height: auto !important;
-  max-height: 100%;
-  object-fit: contain;
-}
-
-:global(.dark) .recent-preview-container :deep(.vue-pdf-embed) {
-  filter: brightness(0.7);
-}
-
-/* Recent file cards - no animations */
-.recent-file-card {
-  transition: background-color 0.3s ease;
-}
-
-.home-text-unselectable :deep(button),
-.home-text-unselectable :deep(button *) {
-  user-select: none;
-  -webkit-user-select: none;
-}
-
-.home-text-unselectable :deep([data-card-title]),
-.home-text-unselectable :deep([data-card-title] *),
-.home-text-unselectable :deep([data-card-description]),
-.home-text-unselectable :deep([data-card-description] *) {
-  user-select: none;
-  -webkit-user-select: none;
 }
 </style>

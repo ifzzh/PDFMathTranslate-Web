@@ -1,304 +1,184 @@
 <script setup>
-import { computed, watch, ref, onMounted } from 'vue'
+import { computed, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Label } from '@/components/ui/label'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Button } from '@/components/ui/button'
 import { ArrowRightLeft } from 'lucide-vue-next'
+import { Label } from '@/components/ui/label'
+import { Input } from '@/components/ui/input'
+import { Button } from '@/components/ui/button'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import FileSelector from '@/components/FileSelector.vue'
-
 
 const { t } = useI18n()
 
 const props = defineProps({
   config: {
     type: Object,
-    default: () => null
-  }
+    default: () => ({ languages: [], services: [], defaults: {} }),
+  },
+  modelValue: {
+    type: Object,
+    required: true,
+  },
 })
 
-const model = defineModel()
+const emit = defineEmits(['update:modelValue', 'file-selected', 'files-selected'])
 
-const emit = defineEmits(['file-selected', 'files-selected', 'open-service-settings'])
-
-
-
-// Computed properties for languages to ensure stable order if needed
-const languages = computed(() => {
-  if (!props.config?.languages) {
-    console.debug('[TranslationOptions] No languages in config:', props.config)
-    return []
-  }
-  const langKeys = Object.keys(props.config.languages)
-  console.debug('[TranslationOptions] Languages loaded:', langKeys.length, langKeys)
-  return langKeys
+const model = computed({
+  get: () => props.modelValue,
+  set: (value) => emit('update:modelValue', value),
 })
 
-const services = computed(() => {
-  if (!props.config?.services) {
-    console.debug('[TranslationOptions] No services in config:', props.config)
-    return []
-  }
-  const svcs = Array.isArray(props.config.services) ? props.config.services : []
-  console.debug('[TranslationOptions] Services loaded:', svcs.length, svcs)
-  return svcs
+const languages = computed(() => props.config?.languages || [])
+const services = computed(() => props.config?.services || [])
+
+const selectedService = computed(() => {
+  return services.value.find(item => item.value === model.value.service) || null
 })
 
-// Debug: Log model values
-watch(() => model.value, (newModel) => {
-  console.debug('[TranslationOptions] Model updated:', {
-    langFrom: newModel?.langFrom,
-    langTo: newModel?.langTo,
-    service: newModel?.service,
-    source: newModel?.source
-  })
-}, { deep: true, immediate: true })
+const currentFields = computed(() => selectedService.value?.fields || [])
 
-// Ensure default values are valid when config loads
-watch(() => props.config, (newConfig, oldConfig) => {
-  // Only process if config actually changed
-  if (newConfig === oldConfig) return
-  
-  console.debug('[TranslationOptions] Config changed:', {
-    hasLanguages: !!newConfig?.languages,
-    hasServices: !!newConfig?.services,
-    languagesCount: newConfig?.languages ? Object.keys(newConfig.languages).length : 0,
-    servicesCount: Array.isArray(newConfig?.services) ? newConfig.services.length : 0
-  })
-  
-  // Initialize languages
-  if (newConfig && newConfig.languages && typeof newConfig.languages === 'object') {
-    const langKeys = Object.keys(newConfig.languages)
-    if (langKeys.length > 0) {
-      // Ensure model.value exists
-      if (!model.value) {
-        console.warn('[TranslationOptions] Model value is null/undefined, initializing')
-        return // Will be handled by parent component
-      }
-      
-      // Set default langFrom if not set or invalid
-      const currentLangFrom = model.value.langFrom
-      if (!currentLangFrom || typeof currentLangFrom !== 'string' || !langKeys.includes(currentLangFrom)) {
-        const newLangFrom = langKeys[0]
-        console.debug('[TranslationOptions] Setting langFrom:', currentLangFrom, '->', newLangFrom)
-        model.value.langFrom = newLangFrom
-      } else {
-        console.debug('[TranslationOptions] langFrom is valid:', currentLangFrom)
-      }
-      
-      // Set default langTo if not set or invalid
-      const currentLangTo = model.value.langTo
-      if (!currentLangTo || typeof currentLangTo !== 'string' || !langKeys.includes(currentLangTo)) {
-        const chineseLang = langKeys.find(l => l.includes('Chinese'))
-        const newLangTo = chineseLang || langKeys[0]
-        console.debug('[TranslationOptions] Setting langTo:', currentLangTo, '->', newLangTo)
-        model.value.langTo = newLangTo
-      } else {
-        console.debug('[TranslationOptions] langTo is valid:', currentLangTo)
-      }
-    } else {
-      console.warn('[TranslationOptions] No languages available in config')
-    }
-  } else if (newConfig && !newConfig.languages) {
-    console.warn('[TranslationOptions] Config loaded but no languages property')
-  }
-  
-  // Initialize services
-  if (newConfig && newConfig.services) {
-    if (!Array.isArray(newConfig.services)) {
-      console.warn('[TranslationOptions] Services is not an array:', typeof newConfig.services)
+watch(
+  services,
+  (items) => {
+    if (!items.length || model.value.service) {
       return
     }
-    
-    if (newConfig.services.length > 0) {
-      // Ensure model.value exists
-      if (!model.value) {
-        console.warn('[TranslationOptions] Model value is null/undefined, initializing')
-        return
-      }
-      
-      // Set default service if not set or invalid
-      const currentService = model.value.service
-      const serviceValues = newConfig.services.map(s => s.value || s)
-      if (!currentService || typeof currentService !== 'string' || !serviceValues.includes(currentService)) {
-        const first = newConfig.services[0]
-        const newService = first?.value || first
-        console.debug('[TranslationOptions] Setting service:', currentService, '->', newService)
-        model.value.service = newService
-      } else {
-        console.debug('[TranslationOptions] service is valid:', currentService)
-      }
-    } else {
-      console.warn('[TranslationOptions] Services array is empty')
-    }
-  } else if (newConfig && !newConfig.services) {
-    console.warn('[TranslationOptions] Config loaded but no services property')
-  }
-}, { immediate: true, deep: true })
-
-const handleFileSelected = (file) => {
-  emit('file-selected', file)
-}
-
-const handleFilesSelected = (files) => {
-  emit('files-selected', files)
-}
-
-const rotation = ref(0)
-
-const swapLanguages = () => {
-  rotation.value += 180
-  const temp = model.value.langFrom
-  model.value.langFrom = model.value.langTo
-  model.value.langTo = temp
-}
-
-// Create computed properties for two-way binding with validation
-const langFrom = computed({
-  get: () => {
-    const value = model.value.langFrom
-    // Validate value exists in languages array
-    if (value && languages.value.length > 0 && !languages.value.includes(value)) {
-      console.warn('[TranslationOptions] langFrom value not in languages:', value, 'Available:', languages.value)
-    }
-    return value
+    model.value.service = props.config?.defaults?.service || items[0].value
   },
-  set: (val) => {
-    console.debug('[TranslationOptions] langFrom changed:', model.value.langFrom, '->', val)
-    if (languages.value.includes(val)) {
-      model.value.langFrom = val
-    } else {
-      console.warn('[TranslationOptions] Invalid langFrom value:', val)
-    }
-  }
-})
+  { immediate: true }
+)
 
-const langTo = computed({
-  get: () => {
-    const value = model.value.langTo
-    // Validate value exists in languages array
-    if (value && languages.value.length > 0 && !languages.value.includes(value)) {
-      console.warn('[TranslationOptions] langTo value not in languages:', value, 'Available:', languages.value)
+watch(
+  languages,
+  (items) => {
+    if (!items.length) {
+      return
     }
-    return value
+    if (!model.value.lang_in) {
+      model.value.lang_in = props.config?.defaults?.lang_in || items[0].value
+    }
+    if (!model.value.lang_out) {
+      model.value.lang_out = props.config?.defaults?.lang_out || items[0].value
+    }
   },
-  set: (val) => {
-    console.debug('[TranslationOptions] langTo changed:', model.value.langTo, '->', val)
-    if (languages.value.includes(val)) {
-      model.value.langTo = val
-    } else {
-      console.warn('[TranslationOptions] Invalid langTo value:', val)
-    }
+  { immediate: true }
+)
+
+watch(
+  () => model.value.service,
+  () => {
+    model.value.service_credentials = {}
   }
-})
+)
+
+const serviceLabel = computed(() => selectedService.value?.display || '')
 
 const service = computed({
-  get: () => {
-    const value = model.value.service
-    const serviceValues = services.value.map(s => s.value || s)
-    if (value && serviceValues.length > 0 && !serviceValues.includes(value)) {
-      console.warn('[TranslationOptions] service value not in services:', value, 'Available:', serviceValues)
-    }
-    return value
+  get: () => model.value.service,
+  set: (value) => {
+    model.value.service = value
   },
-  set: (val) => {
-    const serviceValues = services.value.map(s => s.value || s)
-    console.debug('[TranslationOptions] service changed:', model.value.service, '->', val)
-    if (serviceValues.includes(val)) {
-      model.value.service = val
-    } else {
-      console.warn('[TranslationOptions] Invalid service value:', val)
-    }
-  }
 })
 
-// Log initial state on mount
-onMounted(() => {
-  console.debug('[TranslationOptions] Component mounted', {
-    config: props.config,
-    model: model.value,
-    languages: languages.value,
-    services: services.value
-  })
-})
+const swapLanguages = () => {
+  const currentIn = model.value.lang_in
+  model.value.lang_in = model.value.lang_out
+  model.value.lang_out = currentIn
+}
+
+const updateCredential = (name, value) => {
+  if (!model.value.service_credentials) {
+    model.value.service_credentials = {}
+  }
+  model.value.service_credentials[name] = value
+}
+
+const credentialValue = (name) => {
+  return model.value.service_credentials?.[name] || ''
+}
+
+const languageLabel = (value) => {
+  return languages.value.find(item => item.value === value)?.label || value
+}
 </script>
 
 <template>
   <div class="space-y-6">
-    <div class="space-y-2">
-      <FileSelector 
-        v-model:source="model.source" 
-        v-model:url="model.url" 
-        @file-selected="handleFileSelected"
-        @files-selected="handleFilesSelected"
-      />
-    </div>
+    <FileSelector @file-selected="emit('file-selected', $event)" @files-selected="emit('files-selected', $event)" />
 
-    <div class="flex items-end gap-2">
-      <div class="flex-1 space-y-2">
+    <div class="grid gap-4 md:grid-cols-[1fr_auto_1fr]">
+      <div class="space-y-2">
         <Label>{{ t('translation.from') }}</Label>
-        <Select :model-value="langFrom" @update:model-value="(val) => langFrom = val">
+        <Select :model-value="model.lang_in" @update:model-value="(value) => (model.lang_in = value)">
           <SelectTrigger>
             <SelectValue :placeholder="t('translation.selectLanguage')">
-              <span v-if="langFrom">{{ langFrom }}</span>
+              <span v-if="model.lang_in">{{ languageLabel(model.lang_in) }}</span>
               <span v-else class="text-muted-foreground">{{ t('translation.selectLanguage') }}</span>
             </SelectValue>
           </SelectTrigger>
           <SelectContent>
-            <SelectItem 
-              v-for="lang in languages" 
-              :key="`from-${lang}`" 
-              :value="lang"
-            >
-              {{ lang }}
+            <SelectItem v-for="language in languages" :key="`from-${language.value}`" :value="language.value">
+              {{ language.label }}
             </SelectItem>
-            <div v-if="languages.length === 0" class="px-2 py-1.5 text-sm text-muted-foreground">
-              {{ t('translation.noLanguagesAvailable') || 'No languages available' }}
-            </div>
           </SelectContent>
         </Select>
       </div>
 
-      <Button 
-        variant="ghost" 
-        size="icon" 
-        class="mb-0.5 shrink-0" 
-        @click="swapLanguages"
-        :title="t('translation.swapLanguages')"
-      >
-        <ArrowRightLeft 
-          class="h-4 w-4 transition-transform duration-300"
-          :style="{ transform: `rotate(${rotation}deg)` }"
-        />
-      </Button>
+      <div class="flex items-end justify-center">
+        <Button variant="ghost" size="icon" class="mb-0.5 shrink-0" @click="swapLanguages" :title="t('translation.swapLanguages')">
+          <ArrowRightLeft class="h-4 w-4" />
+        </Button>
+      </div>
 
-      <div class="flex-1 space-y-2">
+      <div class="space-y-2">
         <Label>{{ t('translation.to') }}</Label>
-        <Select :model-value="langTo" @update:model-value="(val) => langTo = val">
+        <Select :model-value="model.lang_out" @update:model-value="(value) => (model.lang_out = value)">
           <SelectTrigger>
             <SelectValue :placeholder="t('translation.selectLanguage')">
-              <span v-if="langTo">{{ langTo }}</span>
+              <span v-if="model.lang_out">{{ languageLabel(model.lang_out) }}</span>
               <span v-else class="text-muted-foreground">{{ t('translation.selectLanguage') }}</span>
             </SelectValue>
           </SelectTrigger>
           <SelectContent>
-            <SelectItem 
-              v-for="lang in languages" 
-              :key="`to-${lang}`" 
-              :value="lang"
-            >
-              {{ lang }}
+            <SelectItem v-for="language in languages" :key="`to-${language.value}`" :value="language.value">
+              {{ language.label }}
             </SelectItem>
-            <div v-if="languages.length === 0" class="px-2 py-1.5 text-sm text-muted-foreground">
-              {{ t('translation.noLanguagesAvailable') || 'No languages available' }}
-            </div>
           </SelectContent>
         </Select>
       </div>
     </div>
 
+    <div class="space-y-2">
+      <Label>{{ t('translation.service') }}</Label>
+      <Select :model-value="service" @update:model-value="(value) => (service = value)">
+        <SelectTrigger>
+          <SelectValue :placeholder="t('translation.selectService')">
+            <span v-if="service">{{ serviceLabel }}</span>
+            <span v-else class="text-muted-foreground">{{ t('translation.selectService') }}</span>
+          </SelectValue>
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem v-for="item in services" :key="item.value" :value="item.value">
+            {{ item.display }}
+          </SelectItem>
+        </SelectContent>
+      </Select>
+    </div>
 
-    
-    <!-- Advanced Options Accordion or Toggle could go here -->
+    <div v-if="currentFields.length > 0" class="grid gap-4 md:grid-cols-2">
+      <div v-for="field in currentFields" :key="field.name" class="space-y-2">
+        <Label :for="field.name">
+          {{ field.label }}
+          <span v-if="field.required" class="text-destructive">*</span>
+        </Label>
+        <Input
+          :id="field.name"
+          :type="field.secret ? 'password' : 'text'"
+          :placeholder="field.placeholder || field.label"
+          :model-value="credentialValue(field.name)"
+          @update:model-value="(value) => updateCredential(field.name, value)"
+        />
+      </div>
+    </div>
   </div>
 </template>
