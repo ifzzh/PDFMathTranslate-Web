@@ -2,6 +2,7 @@
 import { computed, defineAsyncComponent, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import Header from '@/components/Header.vue'
+import HistoryView from '@/components/HistoryView.vue'
 import TranslationOptions from '@/components/TranslationOptions.vue'
 import ApplicationSettings from '@/components/ApplicationSettings.vue'
 import BatchProgressCard from '@/components/BatchProgressCard.vue'
@@ -81,7 +82,8 @@ const DEFAULT_PREFERENCES = {
 
 const config = ref(null)
 const versionInfo = ref(null)
-const showSettings = ref(false)
+const currentView = ref('workspace')
+const lastNonSettingsView = ref('workspace')
 const pendingFiles = ref([])
 const selectedFile = ref(null)
 const selectedFilePreviewUrl = ref(null)
@@ -150,6 +152,8 @@ const translationParams = reactive({
   service_credentials: {},
 })
 
+const showSettings = computed(() => currentView.value === 'settings')
+const navigationView = computed(() => (showSettings.value ? lastNonSettingsView.value : currentView.value))
 const isBatchMode = computed(() => batchQueue.value.length > 0)
 const completedBatchCount = computed(() => batchQueue.value.filter(task => ['completed', 'failed', 'cancelled'].includes(task.status)).length)
 const isBatchComplete = computed(() => isBatchMode.value && batchQueue.value.length > 0 && batchQueue.value.every(task => ['completed', 'failed', 'cancelled'].includes(task.status)))
@@ -176,6 +180,12 @@ watch(
   },
   { deep: true }
 )
+
+watch(currentView, (view) => {
+  if (view !== 'settings') {
+    lastNonSettingsView.value = view
+  }
+})
 
 watch(selectedFile, (file) => {
   if (selectedFilePreviewUrl.value) {
@@ -215,6 +225,28 @@ const clearRecentFiles = () => {
 const changeLanguage = (langCode) => {
   locale.value = langCode
   localStorage.setItem(STORAGE_KEYS.locale, langCode)
+}
+
+const setCurrentView = (view) => {
+  if (view === 'settings') {
+    if (currentView.value !== 'settings') {
+      lastNonSettingsView.value = currentView.value
+    }
+    currentView.value = 'settings'
+    return
+  }
+
+  currentView.value = view
+}
+
+const toggleSettings = () => {
+  if (showSettings.value) {
+    currentView.value = lastNonSettingsView.value || 'workspace'
+    return
+  }
+
+  lastNonSettingsView.value = currentView.value
+  currentView.value = 'settings'
 }
 
 const applyConfigDefaults = () => {
@@ -644,16 +676,17 @@ onUnmounted(() => {
 <template>
   <div class="min-h-screen bg-background text-foreground">
     <Header
+      :current-view="navigationView"
       :show-settings="showSettings"
       :is-translating="isTranslating"
-      @toggle-settings="showSettings = !showSettings"
+      @toggle-settings="toggleSettings"
+      @set-view="setCurrentView"
       @change-language="changeLanguage"
-      @go-home="showSettings = false"
+      @go-home="setCurrentView('workspace')"
     />
 
     <main class="px-6 py-8">
-      <Transition name="fade" mode="out-in">
-        <div v-if="!showSettings" key="home" class="mx-auto max-w-5xl space-y-8">
+      <section v-show="currentView === 'workspace'" class="mx-auto max-w-5xl space-y-8">
           <Card class="border-dashed">
             <CardHeader class="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
               <div class="space-y-2">
@@ -665,7 +698,7 @@ onUnmounted(() => {
                   <Server class="h-3.5 w-3.5" />
                   {{ t(`service.status.${serviceStatus}`) }}
                 </Badge>
-                <Button variant="outline" size="sm" class="gap-2" @click="showSettings = true">
+                <Button variant="outline" size="sm" class="gap-2" @click="setCurrentView('settings')">
                   <Settings2 class="h-4 w-4" />
                   {{ t('settings.title') }}
                 </Button>
@@ -803,9 +836,14 @@ onUnmounted(() => {
                 <CardTitle>{{ t('recentFiles.title') }}</CardTitle>
                 <CardDescription>{{ t('recentFiles.description') }}</CardDescription>
               </div>
-              <Button variant="ghost" size="sm" @click="clearRecentFiles">
-                {{ t('recentFiles.clear') }}
-              </Button>
+              <div class="flex items-center gap-2">
+                <Button variant="outline" size="sm" @click="setCurrentView('history')">
+                  {{ t('history.openView') }}
+                </Button>
+                <Button variant="ghost" size="sm" @click="clearRecentFiles">
+                  {{ t('recentFiles.clear') }}
+                </Button>
+              </div>
             </CardHeader>
             <CardContent>
               <div class="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
@@ -849,9 +887,13 @@ onUnmounted(() => {
               </div>
             </CardContent>
           </Card>
-        </div>
+      </section>
 
-        <div v-else key="settings" class="mx-auto max-w-3xl space-y-6">
+      <section v-show="currentView === 'history'" class="mx-auto max-w-6xl">
+        <HistoryView :active="currentView === 'history'" />
+      </section>
+
+      <section v-show="currentView === 'settings'" class="mx-auto max-w-3xl space-y-6">
           <Card>
             <CardHeader>
               <CardTitle>{{ t('settings.title') }}</CardTitle>
@@ -877,8 +919,7 @@ onUnmounted(() => {
               </div>
             </CardContent>
           </Card>
-        </div>
-      </Transition>
+      </section>
     </main>
   </div>
 </template>
@@ -891,15 +932,5 @@ onUnmounted(() => {
 :deep(.vue-pdf-embed > div:not(:first-child)),
 :deep(.vue-pdf-embed canvas:not(:first-of-type)) {
   display: none;
-}
-
-.fade-enter-active,
-.fade-leave-active {
-  transition: opacity 0.2s ease;
-}
-
-.fade-enter-from,
-.fade-leave-to {
-  opacity: 0;
 }
 </style>

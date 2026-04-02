@@ -1,7 +1,15 @@
 import axios from 'axios';
 
-const apiClient = axios.create({
+const translationClient = axios.create({
     baseURL: '/v1',
+    headers: {
+        'Content-Type': 'application/json',
+    },
+});
+
+const historyClient = axios.create({
+    baseURL: '/api',
+    timeout: 60000,
     headers: {
         'Content-Type': 'application/json',
     },
@@ -15,34 +23,55 @@ export default {
                 formData.append(key, params[key]);
             }
         }
-        return apiClient.post('/translate', formData, {
+        return translationClient.post('/translate', formData, {
             headers: {
                 'Content-Type': 'multipart/form-data',
             }
         });
     },
     getStatus(taskId) {
-        return apiClient.get(`/translate/${taskId}`);
+        return translationClient.get(`/translate/${taskId}`);
     },
     cancelTranslation(taskId) {
-        return apiClient.post(`/translate/${taskId}/stop`);
+        return translationClient.post(`/translate/${taskId}/stop`);
     },
     getConfig() {
-        return apiClient.get('/config');
+        return translationClient.get('/config');
     },
     getHealth() {
-        return apiClient.get('/status');
+        return translationClient.get('/status');
     },
     getVersion() {
-        return apiClient.get('/version');
+        return translationClient.get('/version');
     },
     downloadTaskMono(taskId) {
-        return apiClient.get(`/translate/${taskId}/download/mono`, { responseType: 'blob' });
+        return translationClient.get(`/translate/${taskId}/download/mono`, { responseType: 'blob' });
     },
     downloadTaskDual(taskId) {
-        return apiClient.get(`/translate/${taskId}/download/dual`, { responseType: 'blob' });
+        return translationClient.get(`/translate/${taskId}/download/dual`, { responseType: 'blob' });
     },
     checkTaskExists(taskId) {
-        return apiClient.get(`/translate/${taskId}`);
-    }
+        return translationClient.get(`/translate/${taskId}`);
+    },
+    fetchJobs(params = {}) {
+        return historyClient.get('/jobs', { params });
+    },
+    fetchJob(jobId) {
+        return historyClient.get(`/jobs/${jobId}`);
+    },
+    fetchJobFiles(jobId) {
+        return historyClient.get(`/jobs/${jobId}/files`);
+    },
+    renameJob(jobId, payload) {
+        return historyClient.patch(`/jobs/${jobId}`, payload);
+    },
+    deleteJob(jobId, confirm = false) {
+        return historyClient.delete(`/jobs/${jobId}`, { params: { confirm } });
+    },
+    deleteJobs(payload) {
+        return historyClient.post('/jobs/delete', payload);
+    },
+    fetchFileText(fileId) {
+        return historyClient.get(`/files/${fileId}`, { responseType: 'text' });
+    },
 };

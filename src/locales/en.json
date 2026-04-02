@@ -1,10 +1,19 @@
 {
   "app": {
     "title": "PDF Babel",
-    "subtitle": "BabelDOC-powered translation workspace"
+    "subtitle": "BabelDOC-powered translation workspace",
+    "views": {
+      "workspace": "Workspace",
+      "history": "History"
+    }
   },
   "common": {
-    "close": "Close"
+    "close": "Close",
+    "cancel": "Cancel",
+    "save": "Save",
+    "delete": "Delete",
+    "loading": "Loading...",
+    "requestFailed": "Request failed"
   },
   "errors": {
     "serviceRequired": "Select a translation service before starting.",
@@ -135,6 +144,88 @@
     "clear": "Clear",
     "mono": "Translated",
     "dual": "Bilingual"
+  },
+  "history": {
+    "title": "Translation history",
+    "description": "Browse archived BabelDOC jobs, preview outputs, and manage stored files.",
+    "openView": "Open full history",
+    "refresh": "Refresh",
+    "searchPlaceholder": "Search by title, folder, or job ID",
+    "selectedCount": "{count} selected",
+    "empty": "No translation history has been recorded yet.",
+    "noMatches": "No jobs match the current search.",
+    "listTitle": "Archive",
+    "listDescription": "Newest jobs first.",
+    "detailTitle": "Job details",
+    "detailEmpty": "Select a job to inspect files and manage outputs.",
+    "detailLoading": "Loading job details...",
+    "details": {
+      "createdAt": "Created at",
+      "renamedAt": "Renamed at",
+      "folderName": "Folder name",
+      "originalFilename": "Original filename"
+    },
+    "actions": {
+      "preview": "Preview",
+      "download": "Download",
+      "rename": "Rename",
+      "delete": "Delete",
+      "deleteSelected": "Delete selected",
+      "selectAll": "Select visible",
+      "clearSelection": "Clear visible"
+    },
+    "rename": {
+      "title": "Rename archive entry",
+      "description": "Update the display title, storage folder, or original filename for this completed job.",
+      "displayName": "Display name",
+      "folderName": "Folder name",
+      "originalFilename": "Original filename",
+      "conflict": "A folder or filename conflict was detected. Apply the suggested names and save again.",
+      "useSuggestions": "Use suggestions",
+      "renameNotAllowed": "Rename is only available after a job finishes, fails, or is canceled.",
+      "success": "Archive entry renamed."
+    },
+    "delete": {
+      "title": "Delete history entry",
+      "descriptionSingle": "Delete \"{name}\"? This also removes its stored files.",
+      "descriptionBatch": "Delete {count} selected jobs? This also removes their stored files.",
+      "canceling": "The selected running job is being canceled instead of deleted immediately.",
+      "successSingle": "History entry deleted.",
+      "successBatch": "Deleted {count} jobs.",
+      "partial": "Deleted {deleted} jobs. Skipped {skipped} jobs."
+    },
+    "files": {
+      "original": "Original file",
+      "results": "Generated files",
+      "none": "No files are available for this section.",
+      "pending": "Result files will appear when the job finishes."
+    },
+    "fileTypes": {
+      "original": "Original PDF",
+      "mono": "Translated PDF",
+      "dual": "Bilingual PDF",
+      "glossary": "Glossary CSV"
+    },
+    "preview": {
+      "pdfDescription": "Preview a stored PDF result before downloading it.",
+      "glossaryDescription": "Inspect the extracted glossary table.",
+      "loadingGlossary": "Loading glossary preview...",
+      "glossaryFailed": "Failed to load glossary preview",
+      "noGlossaryData": "No glossary data is available for this file.",
+      "pageLabel": "Page {current} / {total}",
+      "previousPage": "Previous page",
+      "nextPage": "Next page",
+      "zoomOut": "Zoom out",
+      "zoomIn": "Zoom in",
+      "columnFallback": "Column {index}"
+    },
+    "status": {
+      "queued": "Queued",
+      "running": "Running",
+      "finished": "Finished",
+      "failed": "Failed",
+      "canceled": "Canceled"
+    }
   },
   "shortcuts": {
     "theme": "Toggle theme"

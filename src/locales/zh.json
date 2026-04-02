@@ -1,10 +1,19 @@
 {
   "app": {
     "title": "PDF Babel",
-    "subtitle": "基于 BabelDOC 的翻译工作台"
+    "subtitle": "基于 BabelDOC 的翻译工作台",
+    "views": {
+      "workspace": "工作台",
+      "history": "历史记录"
+    }
   },
   "common": {
-    "close": "关闭"
+    "close": "关闭",
+    "cancel": "取消",
+    "save": "保存",
+    "delete": "删除",
+    "loading": "加载中...",
+    "requestFailed": "请求失败"
   },
   "errors": {
     "serviceRequired": "开始前请先选择翻译服务。",
@@ -135,6 +144,88 @@
     "clear": "清空",
     "mono": "译文",
     "dual": "双语"
+  },
+  "history": {
+    "title": "翻译历史",
+    "description": "浏览已归档的 BabelDOC 任务，预览结果，并管理已保存文件。",
+    "openView": "打开完整历史",
+    "refresh": "刷新",
+    "searchPlaceholder": "按标题、目录名或任务 ID 搜索",
+    "selectedCount": "已选择 {count} 项",
+    "empty": "当前还没有历史翻译记录。",
+    "noMatches": "没有匹配当前搜索条件的任务。",
+    "listTitle": "归档列表",
+    "listDescription": "按创建时间从新到旧排序。",
+    "detailTitle": "任务详情",
+    "detailEmpty": "选择一个任务以查看文件并执行管理操作。",
+    "detailLoading": "正在加载任务详情...",
+    "details": {
+      "createdAt": "创建时间",
+      "renamedAt": "重命名时间",
+      "folderName": "目录名",
+      "originalFilename": "原始文件名"
+    },
+    "actions": {
+      "preview": "预览",
+      "download": "下载",
+      "rename": "重命名",
+      "delete": "删除",
+      "deleteSelected": "删除已选",
+      "selectAll": "全选可见项",
+      "clearSelection": "取消可见项"
+    },
+    "rename": {
+      "title": "重命名归档条目",
+      "description": "修改已完成任务的显示标题、存储目录或原始文件名。",
+      "displayName": "显示名称",
+      "folderName": "目录名",
+      "originalFilename": "原始文件名",
+      "conflict": "检测到目录名或文件名冲突。请应用建议名称后再次保存。",
+      "useSuggestions": "使用建议名称",
+      "renameNotAllowed": "只有任务完成、失败或取消后才允许重命名。",
+      "success": "归档条目已重命名。"
+    },
+    "delete": {
+      "title": "删除历史条目",
+      "descriptionSingle": "确定删除“{name}”吗？相关存储文件也会一并移除。",
+      "descriptionBatch": "确定删除已选择的 {count} 个任务吗？相关存储文件也会一并移除。",
+      "canceling": "所选运行中任务已改为取消，而不是立刻删除。",
+      "successSingle": "历史条目已删除。",
+      "successBatch": "已删除 {count} 个任务。",
+      "partial": "已删除 {deleted} 个任务，跳过 {skipped} 个任务。"
+    },
+    "files": {
+      "original": "原始文件",
+      "results": "生成结果",
+      "none": "当前区块没有可用文件。",
+      "pending": "任务完成后会在这里显示结果文件。"
+    },
+    "fileTypes": {
+      "original": "原始 PDF",
+      "mono": "译文 PDF",
+      "dual": "双语 PDF",
+      "glossary": "术语 CSV"
+    },
+    "preview": {
+      "pdfDescription": "下载前先预览已保存的 PDF 结果。",
+      "glossaryDescription": "查看抽取出的术语表内容。",
+      "loadingGlossary": "正在加载术语表预览...",
+      "glossaryFailed": "术语表预览加载失败",
+      "noGlossaryData": "该文件没有可显示的术语数据。",
+      "pageLabel": "第 {current} / {total} 页",
+      "previousPage": "上一页",
+      "nextPage": "下一页",
+      "zoomOut": "缩小",
+      "zoomIn": "放大",
+      "columnFallback": "第 {index} 列"
+    },
+    "status": {
+      "queued": "排队中",
+      "running": "运行中",
+      "finished": "已完成",
+      "failed": "失败",
+      "canceled": "已取消"
+    }
   },
   "shortcuts": {
     "theme": "切换主题"
